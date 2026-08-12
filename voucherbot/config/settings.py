@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     # API rate limiting
     # Health endpoint: max requests per IP per minute. 0 disables the limit.
     health_rate_limit_per_minute: int = 60
+    # Comma-separated proxies whose X-Forwarded-For values we trust.
+    rate_limit_trusted_proxies: list[str] = []
 
     # Email
     resend_api_key: Optional[str] = None
@@ -127,6 +129,13 @@ class Settings(BaseSettings):
     def empty_string_as_none(cls, value: object) -> object:
         if value == "":
             return None
+        return value
+
+    @field_validator("rate_limit_trusted_proxies", mode="before")
+    @classmethod
+    def split_trusted_proxies(cls, value: object) -> object:
+        if isinstance(value, str) and value.strip():
+            return [v.strip() for v in value.split(",") if v.strip()]
         return value
 
 
