@@ -22,8 +22,7 @@ async def _ensure_source_type_enum() -> None:
     When the enum type itself does not exist yet (fresh DB), there is nothing
     to migrate — ``create_all`` creates it with the full value set.
     """
-    conn = engine.connect()
-    try:
+    async with engine.connect() as conn:
         conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
 
         type_exists = await conn.scalar(
@@ -40,8 +39,6 @@ async def _ensure_source_type_enum() -> None:
         for val in _NEW_ENUM_VALUES:
             if val not in existing:
                 await conn.execute(text(f"ALTER TYPE sourcetype ADD VALUE '{val}'"))
-    finally:
-        await conn.close()
 
 
 async def init_db() -> None:

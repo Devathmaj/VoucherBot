@@ -28,9 +28,7 @@ class _FakeResult:
 
 @pytest.mark.asyncio
 async def test_ensure_source_type_enum_skips_when_type_missing() -> None:
-    conn = AsyncMock()
-    conn.execution_options.return_value = conn
-    conn.scalar.return_value = False
+    conn = _conn_mock(scalar_value=False)
     engine = MagicMock()
     engine.connect.return_value = conn
 
@@ -38,6 +36,21 @@ async def test_ensure_source_type_enum_skips_when_type_missing() -> None:
         await _ensure_source_type_enum()
 
     conn.execute.assert_not_called()
+    conn.__aexit__.assert_awaited_once()
+
+
+def _conn_mock(scalar_value: bool, rows: list[Any] | None = None) -> Any:
+    """AsyncMock connection that behaves like a started ``AsyncConnection``.
+
+    Supports ``async with`` (starting/exit) and returns ``self`` from
+    ``execution_options`` as the real connection does.
+    """
+    conn = AsyncMock()
+    conn.__aenter__.return_value = conn
+    conn.execution_options.return_value = conn
+    conn.scalar.return_value = scalar_value
+    conn.execute.return_value = _FakeResult(rows or [])
+    return conn
 
 
 @pytest.mark.asyncio
@@ -50,9 +63,7 @@ async def test_ensure_source_type_enum_adds_missing_values_only() -> None:
             return _FakeResult([("REDDIT",), ("RSS",), ("BLOG",)])
         return _FakeResult([])
 
-    conn = AsyncMock()
-    conn.execution_options.return_value = conn
-    conn.scalar.return_value = True
+    conn = _conn_mock(scalar_value=True, rows=[("REDDIT",), ("RSS",), ("BLOG",)])
     conn.execute.side_effect = fake_execute
     engine = MagicMock()
     engine.connect.return_value = conn
@@ -70,14 +81,11 @@ async def test_ensure_source_type_enum_adds_missing_values_only() -> None:
 
 @pytest.mark.asyncio
 async def test_ensure_source_type_enum_closes_connection() -> None:
-    conn = AsyncMock()
-    conn.execution_options.return_value = conn
-    conn.scalar.return_value = True
-    conn.execute.return_value = _FakeResult([])
+    conn = _conn_mock(scalar_value=True, rows=[])
     engine = MagicMock()
     engine.connect.return_value = conn
 
     with patch.object(init, "engine", engine):
         await _ensure_source_type_enum()
 
-    conn.close.assert_awaited_once()
+    conn.__aexit__.assert_awaited_once()
