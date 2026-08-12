@@ -35,7 +35,8 @@ _SECRET_IN_TEXT = [
     # Sensitive query params: ?api_key=... / &access_token=...
     re.compile(
         r"(?i)([?&](?:api_key|apikey|token|access_token|auth|signature|sig|"
-        r"password|secret)=)[^&\s]*"
+        r"password|secret|client_secret|refresh_token|auth_token)=)"
+        r"[^&\s]*"
     ),
 ]
 
@@ -84,6 +85,24 @@ def redact_secrets(
     return _redact_dict(dict(event_dict))
 
 
+def _forward_rendered(
+    _logger: Any,
+    _method_name: str,
+    event_dict: Any,
+) -> tuple[tuple[str, ...], dict[str, Any]]:
+    """Terminal processor: hand the rendered line to the stdlib backend.
+
+    Forwards ``exc_info=False`` so the stdlib logger cannot re-render a raw,
+    unredacted traceback from the already-processed exception.
+    """
+    rendered = (
+        event_dict["_records"]
+        if isinstance(event_dict, dict) and "_records" in event_dict
+        else event_dict
+    )
+    return (rendered,), {"exc_info": False}
+
+
 def setup_logging() -> None:
     log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
 
@@ -92,8 +111,10 @@ def setup_logging() -> None:
             structlog.stdlib.add_log_level,
             structlog.stdlib.add_logger_name,
             structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.format_exc_info,
             redact_secrets,
             structlog.dev.ConsoleRenderer(),
+            _forward_rendered,
         ],
         wrapper_class=structlog.stdlib.BoundLogger,
         context_class=dict,

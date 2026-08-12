@@ -1,6 +1,8 @@
 from typing import Any
 
-from voucherbot.core.logging import redact_secrets
+import structlog
+
+from voucherbot.core.logging import redact_secrets, setup_logging
 
 
 def _process(event: dict[str, Any]) -> dict[str, Any]:
@@ -11,6 +13,20 @@ def test_redacts_sensitive_keys() -> None:
     event = _process({"api_key": "gsk_abc123", "level": "info"})
     assert event["api_key"] == "[REDACTED]"
     assert event["level"] == "info"
+
+
+def test_redacts_query_param_credentials_in_urls() -> None:
+    event = _process(
+        {
+            "url": (
+                "https://api.example.com/oauth2/token"
+                "?client_secret=CS123&refresh_token=RT456&auth_token=AT789"
+            )
+        }
+    )
+    assert "CS123" not in event["url"]
+    assert "RT456" not in event["url"]
+    assert "AT789" not in event["url"]
 
 
 def test_redacts_secret_shaped_values() -> None:
@@ -61,3 +77,17 @@ def test_keeps_legitimate_values() -> None:
     assert event["used_tokens"] == 45
     assert event["model"] == "llama-3.3-70b"
     assert event["to"] == "a@b.com"
+
+
+def test_exception_message_is_redacted(caplog: Any) -> None:
+    setup_logging()
+    secret = "gsk_supersecrettokenabc123"
+    logger = structlog.get_logger("test-redact-exc")
+    try:
+        raise RuntimeError(f"connection failed with key {secret}")
+    except RuntimeError:
+        logger.exception("request failed")
+
+    rendered = (caplog.text or "").replace("\x1b[0m", "").replace("\x1b[31m", "")
+    assert secret not in rendered
+    assert "[REDACTED]" in rendered
