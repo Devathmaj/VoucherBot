@@ -15,25 +15,30 @@ _NEW_ENUM_VALUES = ["PEARSONVUE", "TRAINING_PROVIDER"]
 async def _ensure_source_type_enum() -> None:
     """Add new SourceType enum values if they don't exist yet.
 
-    ALTER TYPE ... ADD VALUE cannot run inside a transaction, so we use
-    a raw connection with autocommit.
-    """
-    from sqlalchemy import inspect
+    ALTER TYPE ... ADD VALUE cannot run inside a transaction block and any
+    failing statement would poison an implicit transaction, so we run on an
+    explicit autocommit connection where each statement commits on its own.
 
+    When the enum type itself does not exist yet (fresh DB), there is nothing
+    to migrate — ``create_all`` creates it with the full value set.
+    """
     async with engine.connect() as conn:
-        await conn.run_sync(lambda sync_conn: inspect(sync_conn).get_table_names())
-        try:
-            result = await conn.execute(
-                text("SELECT unnest(enum_range(NULL::sourcetype))::text AS val")
-            )
-            existing = {row[0] for row in result}
-        except Exception:
-            existing = set()
+        conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
+
+        type_exists = await conn.scalar(
+            text("SELECT to_regtype('sourcetype') IS NOT NULL")
+        )
+        if not type_exists:
+            return
+
+        result = await conn.execute(
+            text("SELECT unnest(enum_range(NULL::sourcetype))::text AS val")
+        )
+        existing = {row[0] for row in result}
 
         for val in _NEW_ENUM_VALUES:
             if val not in existing:
                 await conn.execute(text(f"ALTER TYPE sourcetype ADD VALUE '{val}'"))
-                await conn.commit()
 
 
 async def init_db() -> None:
