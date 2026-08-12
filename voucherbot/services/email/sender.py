@@ -96,7 +96,7 @@ async def send_email(
 
     import resend
 
-    params: resend.Emails.SendParams = {
+    params: dict[str, Any] = {
         "from": settings.email_from,
         "to": [to] if isinstance(to, str) else to,
         "subject": subject,
@@ -104,6 +104,12 @@ async def send_email(
     }
     if text:
         params["text"] = text
+    if settings.email_reply_to:
+        params["reply_to"] = settings.email_reply_to
+    if settings.email_track_opens:
+        params["track_opens"] = True
+    if settings.email_track_clicks:
+        params["track_clicks"] = True
 
     try:
         async with _send_lock:
@@ -121,7 +127,10 @@ async def send_email(
             def _send() -> dict[str, Any]:
                 from typing import cast
 
-                return cast(dict[str, Any], resend.Emails.send(params))
+                return cast(
+                    dict[str, Any],
+                    resend.Emails.send(cast(resend.Emails.SendParams, params)),
+                )
 
             result = await asyncio.to_thread(_send)
             _last_send_at = time.monotonic()

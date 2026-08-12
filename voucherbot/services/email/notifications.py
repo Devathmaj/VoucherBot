@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 import structlog
 
@@ -15,6 +16,21 @@ if TYPE_CHECKING:
     from voucherbot.services.ai.schema import ExtractedEvent
 
 logger = structlog.get_logger(__name__)
+
+_ALLOWED_URL_SCHEMES = ("http", "https", "mailto")
+
+
+def safe_url(url: str | None) -> str:
+    """Return *url* only if it uses an allowed scheme, else a safe fallback."""
+    if not url:
+        return ""
+    try:
+        scheme = urlparse(url).scheme.lower()
+    except ValueError:
+        return ""
+    if scheme in _ALLOWED_URL_SCHEMES:
+        return url
+    return ""
 
 
 def _row(label: str, value: str | None) -> str:
@@ -54,8 +70,8 @@ def build_voucher_email(
         ]
     )
 
-    claim_url = extracted.registration_url or post.url
-    post_url = post.url
+    claim_url = safe_url(extracted.registration_url or post.url)
+    post_url = safe_url(post.url)
 
     html_body = f"""\
 <div style="font-family:system-ui,sans-serif;line-height:1.45;color:#111;max-width:560px">

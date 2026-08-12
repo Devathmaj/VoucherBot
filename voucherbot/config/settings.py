@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     email_from: str = "VoucherBot <onboarding@resend.dev>"
     email_id: Optional[str] = None
     email_min_interval_seconds: float = 5.0
+    # Optional per-email Reply-To; when unset Resend falls back to the From.
+    email_reply_to: Optional[str] = None
+    # Resend open/click tracking; disabled by default to preserve behavior.
+    email_track_opens: bool = False
+    email_track_clicks: bool = False
 
     # Reddit
     reddit_client_id: Optional[str] = None

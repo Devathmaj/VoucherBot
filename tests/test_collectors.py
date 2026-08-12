@@ -14,6 +14,7 @@ from voucherbot.providers.base import NormalizedPost
 from voucherbot.providers.http_policy import clear_policy_caches, scraper_user_agent
 from voucherbot.providers.rss.collector import (
     RssCollector,
+    _feed_content_type_is_plausible,
     _looks_like_html,
     _normalize_feed_url,
 )
@@ -51,10 +52,17 @@ SAMPLE_HTML = """<!doctype html><html><body>
 
 
 def _mock_response(
-    url: str, *, content: bytes | None = None, text: str | None = None
+    url: str,
+    *,
+    content: bytes | None = None,
+    text: str | None = None,
+    content_type: str | None = None,
 ) -> httpx.Response:
     request = httpx.Request("GET", url)
-    return httpx.Response(200, request=request, content=content, text=text)
+    headers = {"content-type": content_type} if content_type else None
+    return httpx.Response(
+        200, request=request, content=content, text=text, headers=headers
+    )
 
 
 def _source_by_name(name_suffix: str) -> dict[str, Any]:
@@ -148,6 +156,32 @@ def test_looks_like_html() -> None:
     assert _looks_like_html(SAMPLE_RSS) is False
 
 
+def test_feed_content_type_is_plausible() -> None:
+    assert _feed_content_type_is_plausible(None) is True
+    assert _feed_content_type_is_plausible("") is True
+    assert _feed_content_type_is_plausible("application/rss+xml") is True
+    assert _feed_content_type_is_plausible("application/atom+xml") is True
+    assert _feed_content_type_is_plausible("application/xml; charset=utf-8") is True
+    assert _feed_content_type_is_plausible("text/xml") is True
+    assert _feed_content_type_is_plausible("application/json") is True
+    assert _feed_content_type_is_plausible("text/html") is True
+    assert _feed_content_type_is_plausible("text/plain") is True
+    assert _feed_content_type_is_plausible("application/octet-stream") is True
+
+
+def test_feed_content_type_rejects_binary_payloads() -> None:
+    assert _feed_content_type_is_plausible("image/png") is False
+    assert _feed_content_type_is_plausible("image/jpeg") is False
+    assert _feed_content_type_is_plausible("audio/mpeg") is False
+    assert _feed_content_type_is_plausible("video/mp4") is False
+    assert _feed_content_type_is_plausible("multipart/form-data") is False
+    assert _feed_content_type_is_plausible("application/pdf") is False
+    assert _feed_content_type_is_plausible("application/zip") is False
+    assert _feed_content_type_is_plausible("application/x-tar") is False
+    assert _feed_content_type_is_plausible("application/msword") is False
+    assert _feed_content_type_is_plausible("application/vnd.ms-excel") is False
+
+
 def test_scraper_user_agent_is_identifying() -> None:
     ua: str = scraper_user_agent()
     assert "VoucherBot" in ua
@@ -212,6 +246,45 @@ async def test_rss_collector_rejects_html_response() -> None:
         )
 
     assert posts == []
+
+
+@pytest.mark.asyncio
+async def test_rss_collector_rejects_binary_content_type() -> None:
+    collector = RssCollector()
+    response: httpx.Response = _mock_response(
+        "https://example.com/feed.xml",
+        content=SAMPLE_RSS,
+        content_type="image/png",
+    )
+
+    with patch(
+        "voucherbot.providers.rss.collector.polite_get",
+        new=AsyncMock(return_value=response),
+    ):
+        posts: list[NormalizedPost] = await collector.collect(
+            {"feed_url": "https://example.com/feed.xml"}, limit=5
+        )
+
+    assert posts == []
+
+
+@pytest.mark.asyncio
+async def test_rss_collector_parses_feed_with_missing_content_type() -> None:
+    collector = RssCollector()
+    response: httpx.Response = _mock_response(
+        "https://example.com/feed.xml", content=SAMPLE_RSS
+    )
+
+    with patch(
+        "voucherbot.providers.rss.collector.polite_get",
+        new=AsyncMock(return_value=response),
+    ):
+        posts: list[NormalizedPost] = await collector.collect(
+            {"feed_url": "https://example.com/feed.xml"}, limit=5
+        )
+
+    assert len(posts) == 1
+    assert posts[0].url == "https://example.com/voucher"
 
 
 @pytest.mark.asyncio

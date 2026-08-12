@@ -66,6 +66,37 @@ def _looks_like_html(content: bytes) -> bool:
     return start.startswith(b"<!doctype html") or start.startswith(b"<html")
 
 
+# Content-Types that can never carry an RSS/Atom/JSON feed. Anything else is
+# allowed through so real feeds with missing/loose headers keep working.
+_NON_FEED_CONTENT_TYPE_PREFIXES = (
+    "image/",
+    "audio/",
+    "video/",
+    "multipart/",
+    "application/pdf",
+    "application/zip",
+    "application/gzip",
+    "application/x-gzip",
+    "application/x-tar",
+    "application/msword",
+    "application/vnd.",
+)
+
+
+def _feed_content_type_is_plausible(content_type: str | None) -> bool:
+    """True when the response Content-Type is (or could be) a feed.
+
+    Missing/unknown types pass through unchanged; only payloads that can
+    never be a feed are rejected.
+    """
+    if not content_type:
+        return True
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    if not media_type:
+        return True
+    return not media_type.startswith(_NON_FEED_CONTENT_TYPE_PREFIXES)
+
+
 def _clean_html(value: Any) -> str | None:
     if not value or not isinstance(value, str):
         return None
@@ -127,6 +158,7 @@ class RssCollector(BaseCollector):
         try:
             response = await polite_get(feed_url, accept=_FEED_ACCEPT, timeout=timeout)
             content = response.content
+            content_type = response.headers.get("content-type")
         except RobotsDisallowedError:
             logger.info("RssCollector: skipped (robots.txt)", feed_url=feed_url)
             return []
@@ -138,16 +170,17 @@ class RssCollector(BaseCollector):
                 error=str(e)[:160],
             )
 
-            def _fetch() -> bytes:
+            def _fetch() -> tuple[bytes, str | None]:
                 import urllib.request
 
                 req = urllib.request.Request(
                     feed_url, headers=default_headers(accept=_FEED_ACCEPT)
                 )
-                return bytes(urllib.request.urlopen(req, timeout=timeout).read())
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return resp.read(), resp.headers.get("Content-Type")
 
             try:
-                content = await asyncio.to_thread(_fetch)
+                content, content_type = await asyncio.to_thread(_fetch)
             except Exception as fb_err:
                 logger.error(
                     "RssCollector: fetch failed",
@@ -155,6 +188,14 @@ class RssCollector(BaseCollector):
                     error=str(fb_err),
                 )
                 return []
+
+        if not _feed_content_type_is_plausible(content_type):
+            logger.error(
+                "RssCollector: feed URL returned an unsupported Content-Type",
+                feed_url=feed_url,
+                content_type=content_type,
+            )
+            return []
 
         if _looks_like_html(content):
             logger.error(
