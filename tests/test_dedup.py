@@ -126,9 +126,7 @@ class TestDeduplicateBatch:
     def test_removes_utm_duplicates(self) -> None:
         posts: list[NormalizedPost] = [
             _make_post("Azure Promo", "https://azure.com/promo"),
-            _make_post(
-                "Azure Promo", "https://azure.com/promo?utm_source=twitter"
-            ),
+            _make_post("Azure Promo", "https://azure.com/promo?utm_source=twitter"),
         ]
         result: list[NormalizedPost] = deduplicate_batch(posts)
         assert len(result) == 1

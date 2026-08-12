@@ -26,7 +26,12 @@ logger = structlog.get_logger(__name__)
 
 # Selector keys in source config that WebsiteCollector passes to BeautifulSoup.
 # "self" is a sentinel for "use the article element itself", not a CSS selector.
-_SELECTOR_KEYS = ("article_selector", "title_selector", "link_selector", "note_selector")
+_SELECTOR_KEYS = (
+    "article_selector",
+    "title_selector",
+    "link_selector",
+    "note_selector",
+)
 
 
 def _warn_on_invalid_selectors(config: dict[str, Any], source_name: str) -> None:
@@ -52,6 +57,7 @@ def _warn_on_invalid_selectors(config: dict[str, Any], source_name: str) -> None
                 selector=value,
                 error=str(exc),
             )
+
 
 DEFAULT_QUERY_TERMS = [
     "voucher",
