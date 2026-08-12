@@ -25,15 +25,13 @@ def _settings(**overrides: object) -> SimpleNamespace:
         email_from="VoucherBot <onboarding@resend.dev>",
         email_min_interval_seconds=0.0,
         email_reply_to=None,
-        email_track_opens=False,
-        email_track_clicks=False,
     )
     base.__dict__.update(overrides)
     return base
 
 
 @pytest.mark.asyncio
-async def test_send_email_includes_reply_to_and_tracking_when_configured() -> None:
+async def test_send_email_includes_reply_to_when_configured() -> None:
     captured: dict[str, Any] = {}
 
     def _fake_send(params: Any) -> dict[str, Any]:
@@ -44,11 +42,7 @@ async def test_send_email_includes_reply_to_and_tracking_when_configured() -> No
     with (
         patch(
             "voucherbot.services.email.sender.settings",
-            _settings(
-                email_reply_to="reply@example.com",
-                email_track_opens=True,
-                email_track_clicks=True,
-            ),
+            _settings(email_reply_to="reply@example.com"),
         ),
         patch("resend.Emails.send", new=_fake_send),
         patch("asyncio.to_thread", side_effect=lambda fn: fn()),
@@ -59,12 +53,10 @@ async def test_send_email_includes_reply_to_and_tracking_when_configured() -> No
 
     assert result == {"id": "email_123"}
     assert captured["reply_to"] == "reply@example.com"
-    assert captured["track_opens"] is True
-    assert captured["track_clicks"] is True
 
 
 @pytest.mark.asyncio
-async def test_send_email_omits_optional_params_by_default() -> None:
+async def test_send_email_sends_supported_fields_by_default() -> None:
     captured: dict[str, Any] = {}
 
     def _fake_send(params: Any) -> dict[str, Any]:

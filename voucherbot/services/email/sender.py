@@ -14,7 +14,7 @@ Usage:
 import asyncio
 import time
 import structlog
-from typing import Optional, Any
+from typing import Any, Optional, cast
 
 from voucherbot.config.settings import settings
 
@@ -96,7 +96,7 @@ async def send_email(
 
     import resend
 
-    params: dict[str, Any] = {
+    params: resend.Emails.SendParams = {
         "from": settings.email_from,
         "to": [to] if isinstance(to, str) else to,
         "subject": subject,
@@ -106,10 +106,6 @@ async def send_email(
         params["text"] = text
     if settings.email_reply_to:
         params["reply_to"] = settings.email_reply_to
-    if settings.email_track_opens:
-        params["track_opens"] = True
-    if settings.email_track_clicks:
-        params["track_clicks"] = True
 
     try:
         async with _send_lock:
@@ -125,12 +121,7 @@ async def send_email(
                 await asyncio.sleep(delay)
 
             def _send() -> dict[str, Any]:
-                from typing import cast
-
-                return cast(
-                    dict[str, Any],
-                    resend.Emails.send(cast(resend.Emails.SendParams, params)),
-                )
+                return cast(dict[str, Any], resend.Emails.send(params))
 
             result = await asyncio.to_thread(_send)
             _last_send_at = time.monotonic()
