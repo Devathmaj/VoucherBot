@@ -1,6 +1,5 @@
 from typing import Any
 import asyncio
-import hashlib
 import structlog
 from bs4 import BeautifulSoup
 
@@ -93,8 +92,6 @@ class WebsiteCollector(BaseCollector):
 
                 href = urljoin(url, href)
 
-            external_id = hashlib.sha1(f"{url}:{href}:{title}".encode()).hexdigest()
-
             raw_content = article.get_text(separator=" ", strip=True) or None
             if note_selector:
                 note_el = article.select_one(note_selector)
@@ -109,7 +106,6 @@ class WebsiteCollector(BaseCollector):
 
             results.append(
                 NormalizedPost(
-                    external_id=external_id,
                     url=href or url,
                     title=title or href,
                     content=content,

@@ -33,7 +33,7 @@ class TestNormaliseUrl:
 
     def test_strips_fbclid(self) -> None:
         url = "https://example.com/page?fbclid=abc123&keep=yes"
-        result = normalise_url(url)
+        result: str = normalise_url(url)
         assert "fbclid" not in result
         assert "keep=yes" in result
 
@@ -55,7 +55,7 @@ class TestNormaliseUrl:
 
     def test_preserves_non_tracking_params(self) -> None:
         url = "https://example.com/search?q=az900&page=2"
-        result = normalise_url(url)
+        result: str = normalise_url(url)
         assert "q=az900" in result
         assert "page=2" in result
 
@@ -75,32 +75,32 @@ class TestNormaliseUrl:
 
 class TestContentHash:
     def test_is_40_chars(self) -> None:
-        h = content_hash("Test Title", "https://example.com")
+        h: str = content_hash("Test Title", "https://example.com")
         assert len(h) == 40
 
     def test_is_deterministic(self) -> None:
-        h1 = content_hash("Azure 50% Off", "https://azure.com/promo")
-        h2 = content_hash("Azure 50% Off", "https://azure.com/promo")
+        h1: str = content_hash("Azure 50% Off", "https://azure.com/promo")
+        h2: str = content_hash("Azure 50% Off", "https://azure.com/promo")
         assert h1 == h2
 
     def test_case_insensitive_title(self) -> None:
-        h1 = content_hash("Azure Promo", "https://azure.com/promo")
-        h2 = content_hash("AZURE PROMO", "https://azure.com/promo")
+        h1: str = content_hash("Azure Promo", "https://azure.com/promo")
+        h2: str = content_hash("AZURE PROMO", "https://azure.com/promo")
         assert h1 == h2
 
     def test_strips_utm_from_url_before_hashing(self) -> None:
-        h1 = identity_hash("https://example.com/p")
-        h2 = identity_hash("https://example.com/p?utm_source=reddit")
+        h1: str = identity_hash("https://example.com/p")
+        h2: str = identity_hash("https://example.com/p?utm_source=reddit")
         assert h1 == h2
 
     def test_different_titles_produce_different_hashes(self) -> None:
-        h1 = content_hash("AWS Promo", "https://aws.com")
-        h2 = content_hash("Azure Promo", "https://aws.com")
+        h1: str = content_hash("AWS Promo", "https://aws.com")
+        h2: str = content_hash("Azure Promo", "https://aws.com")
         assert h1 != h2
 
     def test_different_urls_produce_different_hashes(self) -> None:
-        h1 = content_hash("Same Title", "https://site-a.com/post")
-        h2 = content_hash("Same Title", "https://site-b.com/post")
+        h1: str = content_hash("Same Title", "https://site-a.com/post")
+        h2: str = content_hash("Same Title", "https://site-b.com/post")
         assert h1 != h2
 
 
@@ -109,51 +109,55 @@ class TestContentHash:
 # ---------------------------------------------------------------------------
 
 
-def _make_post(title: str, url: str, external_id: str = "x") -> NormalizedPost:
-    return NormalizedPost(external_id=external_id, url=url, title=title)
+def _make_post(title: str, url: str) -> NormalizedPost:
+    return NormalizedPost(url=url, title=title)
 
 
 class TestDeduplicateBatch:
     def test_removes_exact_duplicates(self) -> None:
-        posts = [
-            _make_post("Azure Promo", "https://azure.com/promo", "a"),
-            _make_post("Azure Promo", "https://azure.com/promo", "b"),
+        posts: list[NormalizedPost] = [
+            _make_post("Azure Promo", "https://azure.com/promo"),
+            _make_post("Azure Promo", "https://azure.com/promo"),
         ]
-        result = deduplicate_batch(posts)
+        result: list[NormalizedPost] = deduplicate_batch(posts)
         assert len(result) == 1
-        assert result[0].external_id == "a"  # first occurrence kept
+        assert result[0].url == "https://azure.com/promo"  # first occurrence kept
 
     def test_removes_utm_duplicates(self) -> None:
-        posts = [
-            _make_post("Azure Promo", "https://azure.com/promo", "a"),
+        posts: list[NormalizedPost] = [
+            _make_post("Azure Promo", "https://azure.com/promo"),
             _make_post(
-                "Azure Promo", "https://azure.com/promo?utm_source=twitter", "b"
+                "Azure Promo", "https://azure.com/promo?utm_source=twitter"
             ),
         ]
-        result = deduplicate_batch(posts)
+        result: list[NormalizedPost] = deduplicate_batch(posts)
         assert len(result) == 1
 
     def test_keeps_unique_posts(self) -> None:
-        posts = [
-            _make_post("AWS Promo", "https://aws.com/promo", "a"),
-            _make_post("Azure Promo", "https://azure.com/promo", "b"),
-            _make_post("GCP Promo", "https://gcp.com/promo", "c"),
+        posts: list[NormalizedPost] = [
+            _make_post("AWS Promo", "https://aws.com/promo"),
+            _make_post("Azure Promo", "https://azure.com/promo"),
+            _make_post("GCP Promo", "https://gcp.com/promo"),
         ]
-        result = deduplicate_batch(posts)
+        result: list[NormalizedPost] = deduplicate_batch(posts)
         assert len(result) == 3
 
     def test_empty_input_returns_empty(self) -> None:
         assert deduplicate_batch([]) == []
 
     def test_single_post_returns_itself(self) -> None:
-        post = _make_post("Title", "https://example.com/page")
+        post: NormalizedPost = _make_post("Title", "https://example.com/page")
         assert deduplicate_batch([post]) == [post]
 
     def test_preserves_order(self) -> None:
-        posts = [
-            _make_post("A", "https://a.com", "1"),
-            _make_post("B", "https://b.com", "2"),
-            _make_post("C", "https://c.com", "3"),
+        posts: list[NormalizedPost] = [
+            _make_post("A", "https://a.com"),
+            _make_post("B", "https://b.com"),
+            _make_post("C", "https://c.com"),
         ]
-        result = deduplicate_batch(posts)
-        assert [p.external_id for p in result] == ["1", "2", "3"]
+        result: list[NormalizedPost] = deduplicate_batch(posts)
+        assert [p.url for p in result] == [
+            "https://a.com",
+            "https://b.com",
+            "https://c.com",
+        ]

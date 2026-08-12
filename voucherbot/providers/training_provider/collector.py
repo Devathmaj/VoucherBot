@@ -1,6 +1,5 @@
 from typing import Any, Callable
 import asyncio
-import hashlib
 import structlog
 from bs4 import BeautifulSoup
 
@@ -205,15 +204,10 @@ class TrainingProviderCollector(BaseCollector):
 
                 item_url = urljoin(url, item_url)
 
-            external_id = hashlib.sha256(
-                f"{provider}:{item_url or title}".encode()
-            ).hexdigest()[:32]
-
             content = description if description else title
 
             results.append(
                 NormalizedPost(
-                    external_id=external_id,
                     url=item_url or url,
                     title=title,
                     content=content,

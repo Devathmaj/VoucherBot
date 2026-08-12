@@ -8,7 +8,6 @@ from typing import Any, Optional
 class NormalizedPost:
     """Provider-agnostic representation of a single post."""
 
-    external_id: str
     url: str
     title: str
     content: Optional[str] = None

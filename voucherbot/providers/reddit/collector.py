@@ -1,6 +1,5 @@
 from datetime import datetime, timezone
 from typing import Any
-import hashlib
 from urllib.parse import quote_plus
 
 import asyncio
@@ -68,7 +67,6 @@ class RedditCollector(BaseCollector):
 
             results.append(
                 NormalizedPost(
-                    external_id=post.id,
                     url=f"https://www.reddit.com{post.permalink}",
                     title=post.title,
                     content=post.selftext or None,
@@ -132,11 +130,9 @@ class RedditCollector(BaseCollector):
         results: list[NormalizedPost] = []
         for entry in feed.entries[:limit]:
             link = entry.get("link", "")
-            external_id = entry.get("id") or hashlib.sha1(link.encode()).hexdigest()
             title = entry.get("title", "(no title)")
             results.append(
                 NormalizedPost(
-                    external_id=external_id,
                     url=link,
                     title=title,
                     content=entry.get("summary") or None,
