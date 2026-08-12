@@ -3,7 +3,26 @@
 from types import SimpleNamespace
 
 from voucherbot.services.ai.schema import ExtractedEvent
-from voucherbot.services.email.notifications import build_voucher_email
+from voucherbot.services.email.notifications import build_voucher_email, safe_url
+
+
+def test_safe_url_allows_http_https_mailto() -> None:
+    assert safe_url("https://example.com/reg") == "https://example.com/reg"
+    assert safe_url("http://example.com/reg") == "http://example.com/reg"
+    assert safe_url("mailto:vouchers@example.com") == "mailto:vouchers@example.com"
+
+
+def test_safe_url_rejects_javascript_and_other_schemes() -> None:
+    assert safe_url("javascript:alert(1)") == ""
+    assert safe_url("data:text/html;base64,PHNjcmlwdD4=") == ""
+    assert safe_url("vbscript:msgbox(1)") == ""
+    assert safe_url("file:///etc/passwd") == ""
+
+
+def test_safe_url_handles_empty_and_relative() -> None:
+    assert safe_url(None) == ""
+    assert safe_url("") == ""
+    assert safe_url("relative/path") == ""
 
 
 def test_build_voucher_email_includes_post_link_and_partial_fields() -> None:
