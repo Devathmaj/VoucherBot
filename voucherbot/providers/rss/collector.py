@@ -7,7 +7,6 @@ import re
 import structlog
 from lxml import etree
 import feedparser
-import hashlib
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 
@@ -208,7 +207,6 @@ class RssCollector(BaseCollector):
         results: list[NormalizedPost] = []
         for entry in feed.entries[:limit]:
             url = entry.get("link", "")
-            external_id = entry.get("id") or hashlib.sha1(url.encode()).hexdigest()
             raw_summary = entry.get("summary") or entry.get("description")
             content_text = await _clean_html_async(raw_summary)
 
@@ -230,7 +228,6 @@ class RssCollector(BaseCollector):
 
             results.append(
                 NormalizedPost(
-                    external_id=external_id,
                     url=url,
                     title=entry.get("title", "(no title)"),
                     content=content_text,
@@ -278,11 +275,6 @@ class RssCollector(BaseCollector):
                 or item.get("name")
                 or "(no title)"
             )
-            external_id = str(
-                item.get("id")
-                or item.get("guid")
-                or hashlib.sha1(url.encode()).hexdigest()
-            )
             # _clean_html is synchronous but cheap for JSON feed snippets;
             # full async offload happens in the RSS path via _clean_html_async.
             summary = _clean_html(item.get("summary"))
@@ -295,7 +287,6 @@ class RssCollector(BaseCollector):
 
             results.append(
                 NormalizedPost(
-                    external_id=external_id,
                     url=url or feed_url,
                     title=title,
                     content=content_text,

@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     database_url: str
 
+    # API rate limiting
+    # Health endpoint: max requests per IP per minute. 0 disables the limit.
+    health_rate_limit_per_minute: int = 60
+
     # Email
     resend_api_key: Optional[str] = None
     email_from: str = "VoucherBot <onboarding@resend.dev>"

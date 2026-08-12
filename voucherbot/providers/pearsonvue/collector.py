@@ -1,6 +1,5 @@
 from typing import Any
 import asyncio
-import hashlib
 import structlog
 from bs4 import BeautifulSoup, Tag
 
@@ -253,17 +252,12 @@ class PearsonVUECollector(BaseCollector):
 
             slide_text = el.get_text(separator=" ", strip=True)
 
-            external_id = hashlib.sha256(
-                f"pearsonvue-{vendor}-{slide_title}".encode()
-            ).hexdigest()[:32]
-
             content_parts: list[str] = [slide_title]
             if slide_text and slide_text != slide_title:
                 content_parts.append(slide_text)
 
             results.append(
                 NormalizedPost(
-                    external_id=external_id,
                     url=full_url or url,
                     title=slide_title,
                     content="\n".join(content_parts),
@@ -289,13 +283,8 @@ class PearsonVUECollector(BaseCollector):
 
                     full_url = urljoin(url, full_url)
 
-                external_id = hashlib.sha256(
-                    f"pearsonvue-{vendor}-slide-{slide_url}".encode()
-                ).hexdigest()[:32]
-
                 results.append(
                     NormalizedPost(
-                        external_id=external_id,
                         url=full_url,
                         title=slide_text or f"Promotion from {vendor}",
                         content=slide_text or "",
@@ -328,15 +317,10 @@ class PearsonVUECollector(BaseCollector):
 
                 item_url = urljoin(url, item_url)
 
-            external_id = hashlib.sha256(
-                f"pearsonvue-{vendor}-card-{item_url or title}".encode()
-            ).hexdigest()[:32]
-
             content = desc if desc else title
 
             results.append(
                 NormalizedPost(
-                    external_id=external_id,
                     url=item_url or url,
                     title=title,
                     content=content,
@@ -380,10 +364,8 @@ class PearsonVUECollector(BaseCollector):
                     line = f"[{sec['heading']}] {line}"
                 content_parts.append(line)
 
-            page_external_id = hashlib.sha256(url.encode()).hexdigest()[:32]
             results.append(
                 NormalizedPost(
-                    external_id=page_external_id,
                     url=url,
                     title=f"Pearson VUE — {vendor} Certification Programs",
                     content="\n".join(content_parts),

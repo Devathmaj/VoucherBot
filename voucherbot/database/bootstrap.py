@@ -24,6 +24,41 @@ from voucherbot.models.vendor_mapping import VendorMapping
 
 logger = structlog.get_logger(__name__)
 
+# Selector keys in source config that WebsiteCollector passes to BeautifulSoup.
+# "self" is a sentinel for "use the article element itself", not a CSS selector.
+_SELECTOR_KEYS = (
+    "article_selector",
+    "title_selector",
+    "link_selector",
+    "note_selector",
+)
+
+
+def _warn_on_invalid_selectors(config: dict[str, Any], source_name: str) -> None:
+    """Log a warning for any malformed CSS selector in a source config.
+
+    Log-only by design: never rejects or mutates the config, so ingestion
+    behavior is unchanged. Collectors themselves still fail gracefully with
+    backoff if a bad selector slips through.
+    """
+    import soupsieve
+
+    for key in _SELECTOR_KEYS:
+        value = config.get(key)
+        if not isinstance(value, str) or value == "self":
+            continue
+        try:
+            soupsieve.compile(value)
+        except Exception as exc:  # SelectorSyntaxError -> malformed CSS
+            logger.warning(
+                "bootstrap: source config has invalid CSS selector",
+                source=source_name,
+                key=key,
+                selector=value,
+                error=str(exc),
+            )
+
+
 DEFAULT_QUERY_TERMS = [
     "voucher",
     "coupon",
@@ -1550,6 +1585,7 @@ async def _seed_sources(db: AsyncSession) -> None:
     total = len(sources_to_seed)
     for i, source in enumerate(sources_to_seed):
         enabled = source.get("enabled", True)
+        _warn_on_invalid_selectors(source["config"], source["name"])
         logger.info(
             "bootstrap: upserting source",
             source=source["name"],

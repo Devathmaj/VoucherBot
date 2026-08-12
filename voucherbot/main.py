@@ -5,7 +5,7 @@ import structlog
 
 from sqlalchemy import or_, update
 
-from voucherbot.api.routers import health, sources, posts, alerts
+from voucherbot.api.routers import health
 from voucherbot.config.settings import settings
 from voucherbot.core.logging import setup_logging
 from voucherbot.database.connection import session_scope
@@ -68,6 +68,3 @@ app = FastAPI(
 )
 
 app.include_router(health.router)
-app.include_router(sources.router)
-app.include_router(posts.router)
-app.include_router(alerts.router)
