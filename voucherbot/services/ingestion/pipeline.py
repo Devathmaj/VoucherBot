@@ -397,13 +397,13 @@ async def _process_one_source(
     await db.commit()
 
     # ── Stage 4: Email alert ──────────────────────────────────────────────────
+    notified = 0
     for db_post, extracted in pending_notifications:
         sent = await notify_voucher_found(db_post, extracted)
         if sent:
             db_post.is_notified = True
-            await db.commit()
-            stats["notified"] += 1
-        else:
-            await db.rollback()
+            notified += 1
+    await db.commit()
+    stats["notified"] = notified
 
     return stats
