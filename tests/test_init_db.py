@@ -89,3 +89,54 @@ async def test_ensure_source_type_enum_closes_connection() -> None:
         await _ensure_source_type_enum()
 
     conn.__aexit__.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_create_all_excludes_views() -> None:
+    # _create_all is a closure inside init_db; exercise it via run_sync.
+    from voucherbot.database.init_db import init_db as _init_db
+
+    enum_conn = _conn_mock(scalar_value=False)  # enum type missing -> skip migration
+    body_conn = AsyncMock()
+    run_sync = AsyncMock()
+    body_conn.run_sync = run_sync
+    begin_ctx = AsyncMock()
+    begin_ctx.__aenter__.return_value = body_conn
+    engine = MagicMock()
+    engine.connect.return_value = enum_conn
+    engine.begin.return_value = begin_ctx
+
+    with (
+        patch.object(init, "engine", engine),
+        patch.object(init.Base.metadata, "create_all") as create_all,
+    ):
+        sync_conn = MagicMock()
+        await _init_db()
+        run_sync.assert_awaited_once()
+        run_sync.await_args.args[0](sync_conn)
+
+    create_all.assert_called_once()
+    assert create_all.call_args.args[0] is sync_conn
+    tables = create_all.call_args.kwargs["tables"]
+    assert tables
+    assert all(not table.info.get("is_view") for table in tables)
+
+
+@pytest.mark.asyncio
+async def test_init_db_runs_enum_migration_then_create_all() -> None:
+    enum_conn = _conn_mock(scalar_value=False)  # enum type missing -> skip migration
+    body_conn = AsyncMock()
+    run_sync = AsyncMock()
+    body_conn.run_sync = run_sync
+    begin_ctx = AsyncMock()
+    begin_ctx.__aenter__.return_value = body_conn
+    engine = MagicMock()
+    engine.connect.return_value = enum_conn
+    engine.begin.return_value = begin_ctx
+
+    with patch.object(init, "engine", engine):
+        await init.init_db()
+
+    run_sync.assert_awaited_once()
+    assert callable(run_sync.await_args.args[0])
+    enum_conn.__aexit__.assert_awaited_once()

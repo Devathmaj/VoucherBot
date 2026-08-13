@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Generator
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -104,3 +104,70 @@ async def test_send_email_forwards_idempotency_key() -> None:
 
     assert result == {"id": "email_125"}
     assert captured["options"] == {"idempotency_key": "voucher:1:abc"}
+
+
+@pytest.mark.asyncio
+async def test_send_email_skips_when_not_initialized() -> None:
+    sender._initialized = False
+    with patch("voucherbot.services.email.sender.settings", _settings()):
+        result = await sender.send_email(
+            to="user@example.com", subject="Hi", html="<p>hi</p>"
+        )
+    assert result is None
+
+
+def test_init_skips_without_api_key() -> None:
+    sender._initialized = False
+    with patch(
+        "voucherbot.services.email.sender.settings", _settings(resend_api_key=None)
+    ):
+        sender._init()
+    assert sender._initialized is False
+
+
+def test_init_initializes_with_api_key() -> None:
+    sender._initialized = False
+    with (
+        patch("voucherbot.services.email.sender.settings", _settings()),
+        patch("resend.api_key", "re_test"),
+    ):
+        sender._init()
+    assert sender._initialized is True
+
+
+@pytest.mark.asyncio
+async def test_send_test_email_skips_without_email_id() -> None:
+    with (
+        patch("voucherbot.services.email.sender.settings", _settings(email_id=None)),
+        patch(
+            "voucherbot.services.email.sender.send_email",
+            new=AsyncMock(),
+        ) as send,
+    ):
+        result = await sender.send_test_email()
+
+    assert result is None
+    send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_send_test_email_sends_when_configured() -> None:
+    with (
+        patch(
+            "voucherbot.services.email.sender.settings",
+            _settings(email_id="test@example.com"),
+        ),
+        patch(
+            "voucherbot.services.email.sender.send_email",
+            new=AsyncMock(return_value={"id": "email_t1"}),
+        ) as send,
+    ):
+        result = await sender.send_test_email()
+
+    assert result == {"id": "email_t1"}
+    assert send.await_count == 1
+    call = send.await_args
+    assert call is not None
+    assert call.kwargs["to"] == "test@example.com"
+    assert "test email" in call.kwargs["subject"].lower()
+    assert "test email" in call.kwargs["text"].lower()
