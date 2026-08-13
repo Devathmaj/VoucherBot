@@ -1,7 +1,9 @@
 from typing import Any, Callable
 import asyncio
+import httpx
 import structlog
 from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 
 from voucherbot.providers.base import BaseCollector, NormalizedPost
 from voucherbot.providers.http_policy import polite_get, RobotsDisallowedError
@@ -178,14 +180,29 @@ class TrainingProviderCollector(BaseCollector):
         except RobotsDisallowedError:
             logger.info("TrainingProviderCollector: skipped (robots.txt)", url=url)
             return []
-        except Exception as e:
-            logger.error(
-                "TrainingProviderCollector: HTTP error",
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (401, 403):
+                logger.warning(
+                    "TrainingProviderCollector: blocked by auth",
+                    url=url,
+                    provider=provider,
+                )
+                return []
+            raise
+        except (httpx.TimeoutException, httpx.ConnectError):
+            logger.warning(
+                "TrainingProviderCollector: transient error",
                 url=url,
                 provider=provider,
-                error=str(e),
             )
             return []
+        except Exception:
+            logger.exception(
+                "TrainingProviderCollector: unexpected error",
+                url=url,
+                provider=provider,
+            )
+            raise
 
         soup = await asyncio.to_thread(BeautifulSoup, response.text, "html.parser")
         items = await asyncio.to_thread(extractor_fn, soup)
@@ -200,8 +217,6 @@ class TrainingProviderCollector(BaseCollector):
                 continue
 
             if item_url and not item_url.startswith("http"):
-                from urllib.parse import urljoin
-
                 item_url = urljoin(url, item_url)
 
             content = description if description else title

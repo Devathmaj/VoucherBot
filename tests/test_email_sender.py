@@ -34,7 +34,7 @@ def _settings(**overrides: object) -> SimpleNamespace:
 async def test_send_email_includes_reply_to_when_configured() -> None:
     captured: dict[str, Any] = {}
 
-    def _fake_send(params: Any) -> dict[str, Any]:
+    def _fake_send(params: Any, options: Any = None) -> dict[str, Any]:
         captured.clear()
         captured.update(dict(params))
         return {"id": "email_123"}
@@ -59,7 +59,7 @@ async def test_send_email_includes_reply_to_when_configured() -> None:
 async def test_send_email_sends_supported_fields_by_default() -> None:
     captured: dict[str, Any] = {}
 
-    def _fake_send(params: Any) -> dict[str, Any]:
+    def _fake_send(params: Any, options: Any = None) -> dict[str, Any]:
         captured.clear()
         captured.update(dict(params))
         return {"id": "email_124"}
@@ -78,3 +78,29 @@ async def test_send_email_sends_supported_fields_by_default() -> None:
     assert "track_opens" not in captured
     assert "track_clicks" not in captured
     assert captured["text"] == "hi"
+
+
+@pytest.mark.asyncio
+async def test_send_email_forwards_idempotency_key() -> None:
+    captured: dict[str, Any] = {}
+
+    def _fake_send(params: Any, options: Any = None) -> dict[str, Any]:
+        captured.clear()
+        captured.update(dict(params))
+        captured["options"] = options
+        return {"id": "email_125"}
+
+    with (
+        patch("voucherbot.services.email.sender.settings", _settings()),
+        patch("resend.Emails.send", new=_fake_send),
+        patch("asyncio.to_thread", side_effect=lambda fn: fn()),
+    ):
+        result = await sender.send_email(
+            to="user@example.com",
+            subject="Hi",
+            html="<p>hi</p>",
+            idempotency_key="voucher:1:abc",
+        )
+
+    assert result == {"id": "email_125"}
+    assert captured["options"] == {"idempotency_key": "voucher:1:abc"}

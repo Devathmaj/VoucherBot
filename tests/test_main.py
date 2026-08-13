@@ -1,7 +1,21 @@
 import pytest
 from httpx import AsyncClient, ASGITransport
+from typing import Generator
+from unittest.mock import AsyncMock, MagicMock
+
 from voucherbot.main import app
 from voucherbot.api import rate_limit
+from voucherbot.database.connection import get_session
+
+
+@pytest.fixture(autouse=True)
+def _override_db_session() -> Generator[None, None, None]:
+    """Provide a fake DB session so /health works without a live database."""
+    fake_session = MagicMock()
+    fake_session.execute = AsyncMock(return_value=MagicMock())
+    app.dependency_overrides[get_session] = lambda: fake_session
+    yield
+    app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio

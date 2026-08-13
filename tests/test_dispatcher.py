@@ -9,11 +9,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from voucherbot.models.source import Source, SourceType
+import voucherbot.services.dispatcher as dispatcher
 from voucherbot.services.dispatcher import (
     compute_backoff_minutes,
     dispatch_tick,
     poll_interval_minutes,
     rolling_avg_runtime_ms,
+    set_process_boot_at,
 )
 
 
@@ -68,6 +70,30 @@ class TestPollInterval:
     def test_invalid_config_uses_tier(self) -> None:
         source = _source(config={"poll_interval_minutes": "bad"}, priority_tier="D")
         assert poll_interval_minutes(source) == 720
+
+    def test_clamps_interval_below_min(self) -> None:
+        source = _source(config={"poll_interval_minutes": 0})
+        assert poll_interval_minutes(source) == 1
+
+    def test_clamps_interval_below_min_negative(self) -> None:
+        source = _source(config={"poll_interval_minutes": -10})
+        assert poll_interval_minutes(source) == 1
+
+    def test_clamps_interval_above_max(self) -> None:
+        source = _source(config={"poll_interval_minutes": 10**15})
+        assert poll_interval_minutes(source) == 43200
+
+
+class TestBootAt:
+    def test_set_process_boot_at_updates_value(self) -> None:
+        previous = dispatcher.PROCESS_BOOT_AT
+        set_process_boot_at()
+        assert dispatcher.PROCESS_BOOT_AT >= previous
+
+    def test_set_process_boot_at_accepts_explicit_value(self) -> None:
+        expected = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        set_process_boot_at(expected)
+        assert dispatcher.PROCESS_BOOT_AT == expected
 
 
 class TestRollingAverage:

@@ -8,6 +8,7 @@ import voucherbot.models.keyword  # noqa: F401
 import voucherbot.models.event  # noqa: F401
 import voucherbot.models.pipeline_lock  # noqa: F401
 import voucherbot.models.vendor_mapping  # noqa: F401
+import voucherbot.models.notification  # noqa: F401
 
 _NEW_ENUM_VALUES = ["PEARSONVUE", "TRAINING_PROVIDER"]
 

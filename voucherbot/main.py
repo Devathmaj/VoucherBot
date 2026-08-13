@@ -8,9 +8,12 @@ from sqlalchemy import or_, update
 from voucherbot.api.routers import health
 from voucherbot.config.settings import settings
 from voucherbot.core.logging import setup_logging
+from voucherbot.database.bootstrap import bootstrap_data
 from voucherbot.database.connection import session_scope
+from voucherbot.database.init_db import init_db
 from voucherbot.models.source import Source
-from voucherbot.services.dispatcher import reset_lease
+from voucherbot.services.dispatcher import reset_lease, set_process_boot_at
+from voucherbot.services.email.sender import send_test_email
 from voucherbot.services.scheduler import start_scheduler, stop_scheduler
 
 logger = structlog.get_logger()
@@ -19,13 +22,11 @@ logger = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     setup_logging()
+    set_process_boot_at()
     await logger.ainfo("Starting up VoucherBot API...", is_prod=settings.is_prod)
     # Non-prod: create tables + seed. Production uses a DML-only DB role, so
     # schema/setup must be applied ahead of time (alembic + admin bootstrap).
     if not settings.is_prod:
-        from voucherbot.database.init_db import init_db
-        from voucherbot.database.bootstrap import bootstrap_data
-
         await init_db()
         await bootstrap_data()
     else:
@@ -52,8 +53,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     start_scheduler()
 
     # Send a test email to verify the Resend configuration on startup
-    from voucherbot.services.email.sender import send_test_email
-
     await send_test_email()
 
     yield
