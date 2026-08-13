@@ -11,7 +11,8 @@ This project uses **pytest** for unit and integration testing.
 3. [Install Development Dependencies](#-install-development-dependencies)
 4. [Running the Test Suite](#-running-the-test-suite)
 5. [Understanding the Results](#-understanding-the-results)
-6. [Troubleshooting](#-troubleshooting)
+6. [Test Suite Layout](#-test-suite-layout)
+7. [Troubleshooting](#-troubleshooting)
 
 ---
 
@@ -71,7 +72,7 @@ A template is provided as `.env.example`.
 
    This includes any required database connection strings, email credentials, API keys, and (optionally) Reddit API credentials.
 
-   > **📝 Note:** Reddit-related tests require valid Reddit API credentials. If these values are left blank, the Reddit test(s) are expected to fail.
+   > **📝 Note:** The test suite runs fully **offline** with mocked dependencies (see [Test Suite Layout](#-test-suite-layout)) — no credentials are required for `pytest`. The values above are still needed to run the application itself (e.g. the startup bootstrap and live pipelines).
 
 ---
 
@@ -119,8 +120,7 @@ pytest -v
 A typical test run will produce output similar to:
 
 ```text
-107 passed
-15 skipped
+341 passed, 15 skipped, 1 warning in 6.29s
 ```
 
 ### ✅ Passed
@@ -138,22 +138,49 @@ For example:
 - RSS validation tests skip sources that are implemented as website scrapers.
 - Website scraping tests skip sources that are implemented using RSS feeds.
 
+Currently 15 tests skip: 11 RSS-source checks and 4 website-source checks in `test_collectors.py`.
+
 This confirms that the correct collector is configured for each source rather than indicating a problem.
 
 The deduplication suite also includes URL canonicalization checks that verify tracking parameters are removed and host matching is parsed safely rather than relying on substring checks.
 
 ### ❌ Failed
 
-A failed test indicates that the implementation does not currently match the expected behaviour or that an optional external dependency has not been configured.
+A failed test indicates that the implementation does not currently match the expected behaviour.
 
-The project supports collecting voucher information from Reddit, which requires Reddit API credentials. These credentials are intentionally **not** included in the repository.
+The suite runs entirely **offline** — no live database, network requests, or third-party APIs (AI providers, email/Resend, Reddit) are touched. Every external dependency is mocked (for example `polite_get`, `AsyncGroq`, `genai.Client`, and `resend.Emails.send`), and database access is simulated with fake async sessions that route on the SQL statement text.
 
-If Reddit API credentials are not configured in your `.env` file, the Reddit-related test will fail. This is expected behaviour and does not indicate an issue with the rest of the application.
+This means no extra credentials or services are required to run the tests, and a failure points to a genuine regression in the code (or a broken test) rather than a missing configuration value.
 
-To run the complete test suite successfully, populate the Reddit configuration values in `.env` with valid API credentials obtained from Reddit's developer portal.
+---
 
-Without Reddit credentials, all other tests should still pass successfully.
+## 🗂️ Test Suite Layout
 
+The suite is organised by module — each file targets one service, provider, or component. All tests are async-friendly (pytest-asyncio) and hermetic.
+
+| Test file (tests) | Module under test | Highlights |
+|-------------------|-------------------|------------|
+| `test_analyzer.py` (35) | `voucherbot/services/ai/analyzer.py` | JSON extraction parsing (plain/fenced/invalid → safe default), token estimation, Groq/Gemini rate budgets and daily exhaustion, 429 retry handling, model fallback order, `analyze_post_batch` order preservation |
+| `test_bootstrap.py` (24) | `voucherbot/database/bootstrap.py` | Reddit tier/cadence rules, invalid-selector warnings, transient-error detection, retry-with-backoff (and no retry on `IntegrityError`), keyword seeding, bootstrap ordering + advisory-lock skip |
+| `test_pipeline.py` (29) | `voucherbot/services/ingestion/pipeline.py` | URL normalisation, vendor/collector resolution, fetch-limit resolution, `_process_one_source` state machine (keyword filter → dedup → AI → match → outbox → delivery) |
+| `test_pearsonvue_collector.py` (20) | `voucherbot/providers/pearsonvue/collector.py` | Slide/promo/card extraction, card dedup, URL resolution, robots/401/403/429/timeout paths, fetch limits |
+| `test_training_provider_collector.py` (18) | `voucherbot/providers/training_provider/collector.py` | GK/Ascendient/generic extractors, nav-link exclusion, description fallbacks, relative-URL resolution, error/limit paths |
+| `test_settings.py` (10) | `voucherbot/config/settings.py` | Hermetic pydantic-settings construction: defaults, empty-string→`None` validators, trusted-proxy lists, `EventMatcherConfig`, stable `SOURCE_PRIORITY` order |
+| `test_email_sender.py` (8) | `voucherbot/services/email/sender.py` | `send_email` params/reply-to/idempotency key, init state, `send_test_email` skip/send, skip-when-uninitialised |
+| `test_init_db.py` (5) | `voucherbot/database/init_db.py` | Source-type enum migration (add-only), `create_all` excluding view models |
+| `test_collectors.py` (64) | `voucherbot/providers/{rss,website}/collector.py` | Feed-URL normalisation, HTML/content-type rejection for RSS, mocked `polite_get` collection, UA identification, per-type skips |
+| `test_dedup.py` (21) | `voucherbot/services/ingestion/dedup.py` | URL canonicalisation (tracking params, fragments, scheme), content/identity hashing, batch deduplication |
+| `test_dispatcher.py` (21) | `voucherbot/services/dispatcher.py` | Backoff growth/cap, poll-interval resolution, tick lifecycle (busy/idle/ran/failed), due-source selection |
+| `test_event_matcher.py` (74) | `voucherbot/services/ingestion/event_matcher.py` | Shared-event scenarios (two posts → one event), possible matches, event updates |
+| `test_email_notifications.py` (4) | `voucherbot/services/email/notifications.py` | Safe-URL allow/deny list, voucher email builder |
+| `test_http_policy.py` (2) | `voucherbot/providers/http_policy.py` | Robots.txt parsing/caching, politeness delays, per-domain policy state |
+| `test_logging.py` (7) | `voucherbot/core/logging.py` | Structlog processor chain, log-level setup |
+| `test_main.py` (6) | `voucherbot/main.py` + `api/routers/health.py` | `/health` 200 via dependency-overridden session; rate limiting (boundary, disable-at-0, proxy handling) |
+| `test_notification_outbox.py` (8) | `voucherbot/services/email/notifications.py` | Idempotency keys, outbox staging, delivery + `is_notified` update, retry/`FAILED` at max attempts, skip-when-unconfigured |
+
+**Conventions:** HTTP providers patch `polite_get` with an `AsyncMock` returning a hand-built `httpx.Response`; AI providers patch the client factories and rate-budget internals; email patches `resend.Emails.send`. Modules reading a global `settings` object get it patched with a `SimpleNamespace(...)` helper, while `test_settings.py` builds fresh `Settings` instances with `_env_file=None` and an autouse fixture clearing the environment. DB-bound functions use fake async sessions that route on `str(statement)` so unexpected SQL fails loudly.
+
+---
 
 ## 🧪 Testing the AI Voucher Parser End-to-End
 
@@ -168,7 +195,7 @@ IS_TEST=true
 IS_PROD=false
 ```
 
-- `IS_TEST=true` — seeds a `website:local_test` source pointing at `http://localhost:35926/` (see `voucherbot/database/bootstrap.py:928-945`)
+- `IS_TEST=true` — seeds a `website:local_test` source pointing at `http://localhost:35926/` (see `voucherbot/database/bootstrap.py:967-985`)
 - `IS_PROD=false` — the app creates tables and runs bootstrap on startup
 
 ### 2. Start the Local Test Server
@@ -192,7 +219,7 @@ The server listens on `http://localhost:35926/`.
 
 ### 3. How the Scraper Works
 
-The test source is defined at **`voucherbot/database/bootstrap.py:928-945`**:
+The test source is defined at **`voucherbot/database/bootstrap.py:967-985`** (`_test_source`):
 
 ```python
 "config": {
@@ -206,7 +233,7 @@ The test source is defined at **`voucherbot/database/bootstrap.py:928-945`**:
 }
 ```
 
-The `WebsiteCollector` (`voucherbot/providers/website/collector.py:37-41`) reads these selectors and scrapes the page using BeautifulSoup.
+The `WebsiteCollector` (`voucherbot/providers/website/collector.py:28-41`) reads these selectors and scrapes the page using BeautifulSoup.
 
 The `index.html` at `D:\components\index.html` contains `.item` divs with `<h2>` titles — this structure matches the default selectors. **To test different content, edit the HTML or the selectors.**
 
@@ -260,8 +287,8 @@ To change how the test page is parsed, edit:
 
 | File | Lines | What to change |
 |------|-------|----------------|
-| `voucherbot/database/bootstrap.py` | 928-945 | Source config (`article_selector`, `title_selector`, `link_selector`, `query_terms`) |
-| `voucherbot/providers/website/collector.py` | 37-41 | Default selector fallbacks |
+| `voucherbot/database/bootstrap.py` | 967-985 | Source config (`article_selector`, `title_selector`, `link_selector`, `query_terms`) |
+| `voucherbot/providers/website/collector.py` | 28-41 | Default selector fallbacks |
 | `voucherbot/config/settings.py` | 68 | `is_test` setting |
 
 After changing source config, restart the app so bootstrap re-upserts the source.
