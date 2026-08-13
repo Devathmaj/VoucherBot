@@ -1,7 +1,9 @@
 from typing import Any
 import asyncio
+import httpx
 import structlog
 from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 
 from voucherbot.providers.base import BaseCollector, NormalizedPost
 from voucherbot.providers.http_policy import polite_get, RobotsDisallowedError
@@ -60,9 +62,17 @@ class WebsiteCollector(BaseCollector):
                 url=url,
             )
             return []
-        except Exception as e:
-            logger.error("WebsiteCollector: HTTP error", url=url, error=str(e))
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (401, 403):
+                logger.warning("WebsiteCollector: blocked by auth", url=url)
+                return []
+            raise
+        except (httpx.TimeoutException, httpx.ConnectError):
+            logger.warning("WebsiteCollector: transient error", url=url)
             return []
+        except Exception:
+            logger.exception("WebsiteCollector: unexpected error", url=url)
+            raise
 
         soup = await asyncio.to_thread(BeautifulSoup, response.text, "lxml")
         articles = soup.select(article_selector)[:limit]
@@ -88,8 +98,6 @@ class WebsiteCollector(BaseCollector):
                 continue
 
             if href and not href.startswith("http"):
-                from urllib.parse import urljoin
-
                 href = urljoin(url, href)
 
             raw_content = article.get_text(separator=" ", strip=True) or None

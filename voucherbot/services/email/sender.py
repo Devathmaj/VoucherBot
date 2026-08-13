@@ -16,6 +16,8 @@ import time
 import structlog
 from typing import Any, Optional, cast
 
+import resend
+
 from voucherbot.config.settings import settings
 
 logger = structlog.get_logger(__name__)
@@ -30,7 +32,6 @@ def _init() -> None:
     if not settings.resend_api_key:
         logger.warning("email.sender: RESEND_API_KEY not set - email will be skipped.")
         return
-    import resend
 
     resend.api_key = settings.resend_api_key
     _initialized = True
@@ -93,8 +94,6 @@ async def send_email(
     if not _initialized:
         logger.warning("email.sender: skipping send - not initialized.")
         return None
-
-    import resend
 
     params: resend.Emails.SendParams = {
         "from": settings.email_from,

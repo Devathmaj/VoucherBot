@@ -7,6 +7,7 @@ pipeline for that source, updates scheduling fields, and releases the lease.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -367,8 +368,6 @@ async def dispatch_tick(
 
         try:
             if settings.tick_job_timeout_seconds:
-                import asyncio
-
                 async with asyncio.timeout(settings.tick_job_timeout_seconds):
                     stats = await run_pipeline_for_source(session, source, collectors)
             else:

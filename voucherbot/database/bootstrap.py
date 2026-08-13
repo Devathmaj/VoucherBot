@@ -10,7 +10,13 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Awaitable, Callable
 
+import soupsieve
 import structlog
+from asyncpg.exceptions import (  # type: ignore[import-untyped]
+    ConnectionDoesNotExistError,
+    InterfaceError,
+    QueryCanceledError,
+)
 from sqlalchemy import text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import DBAPIError, IntegrityError
@@ -41,8 +47,6 @@ def _warn_on_invalid_selectors(config: dict[str, Any], source_name: str) -> None
     behavior is unchanged. Collectors themselves still fail gracefully with
     backoff if a bad selector slips through.
     """
-    import soupsieve
-
     for key in _SELECTOR_KEYS:
         value = config.get(key)
         if not isinstance(value, str) or value == "self":
@@ -1465,13 +1469,8 @@ def _is_transient(error: Exception) -> bool:
         return False
     if not isinstance(error, DBAPIError):
         return False
-    from asyncpg.exceptions import (  # type: ignore[import-untyped]
-        ConnectionDoesNotExistError as _CDNE,
-        InterfaceError as _IE,
-        QueryCanceledError as _QCE,
-    )
 
-    _TRANSIENT = (_CDNE, _QCE, _IE)
+    _TRANSIENT = (ConnectionDoesNotExistError, QueryCanceledError, InterfaceError)
     cause: BaseException | None = error
     while cause is not None:
         if isinstance(cause, _TRANSIENT):

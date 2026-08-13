@@ -28,6 +28,9 @@ import time
 import structlog
 from typing import Any
 
+from google import genai
+from groq import AsyncGroq
+
 from voucherbot.config.settings import settings
 from voucherbot.services.ai.schema import ExtractedEvent
 
@@ -322,8 +325,6 @@ async def _call_groq_model(
         logger.info("ai.analyzer: model daily limit exhausted, skipping", model=model)
         return None
 
-    from groq import AsyncGroq  # lazy import
-
     client = AsyncGroq(api_key=settings.groq_api_key)
     content_for_prompt = content or "(no content)"
 
@@ -410,8 +411,6 @@ async def _call_gemini(
     title: str, content: str | None, source_name: str | None = None
 ) -> ExtractedEvent | None:
     """Gemini provider adapter.  Returns None on non-retryable failure."""
-    from google import genai  # lazy import
-
     client = genai.Client(api_key=settings.gemini_api_key)
     source_hint = f"Source: {source_name}\n" if source_name else ""
     full_prompt = (

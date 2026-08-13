@@ -1,7 +1,9 @@
 from typing import Any
 import asyncio
+import httpx
 import structlog
 from bs4 import BeautifulSoup, Tag
+from urllib.parse import urljoin
 
 from voucherbot.providers.base import BaseCollector, NormalizedPost
 from voucherbot.providers.http_policy import polite_get, RobotsDisallowedError
@@ -209,11 +211,23 @@ class PearsonVUECollector(BaseCollector):
         except RobotsDisallowedError:
             logger.info("PearsonVUECollector: skipped (robots.txt)", url=url)
             return []
-        except Exception as e:
-            logger.error(
-                "PearsonVUECollector: HTTP error", url=url, vendor=vendor, error=str(e)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (401, 403):
+                logger.warning(
+                    "PearsonVUECollector: blocked by auth", url=url, vendor=vendor
+                )
+                return []
+            raise
+        except (httpx.TimeoutException, httpx.ConnectError):
+            logger.warning(
+                "PearsonVUECollector: transient error", url=url, vendor=vendor
             )
             return []
+        except Exception:
+            logger.exception(
+                "PearsonVUECollector: unexpected error", url=url, vendor=vendor
+            )
+            raise
 
         soup = await asyncio.to_thread(BeautifulSoup, response.text, "html.parser")
 
@@ -241,8 +255,6 @@ class PearsonVUECollector(BaseCollector):
 
             full_url = slide_url
             if full_url and not full_url.startswith("http"):
-                from urllib.parse import urljoin
-
                 full_url = urljoin(url, full_url)
 
             dedup_key = full_url or slide_title
@@ -279,8 +291,6 @@ class PearsonVUECollector(BaseCollector):
 
                 full_url = slide_url
                 if not full_url.startswith("http"):
-                    from urllib.parse import urljoin
-
                     full_url = urljoin(url, full_url)
 
                 results.append(
@@ -313,8 +323,6 @@ class PearsonVUECollector(BaseCollector):
                 seen_urls.add(item_url)
 
             if item_url and not item_url.startswith("http"):
-                from urllib.parse import urljoin
-
                 item_url = urljoin(url, item_url)
 
             content = desc if desc else title

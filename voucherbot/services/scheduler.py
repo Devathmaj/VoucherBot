@@ -16,8 +16,9 @@ from datetime import datetime, timezone
 import structlog
 from sqlalchemy import or_, select
 
+from voucherbot.config.settings import settings
 from voucherbot.database.connection import session_scope
-from voucherbot.models.source import Source
+from voucherbot.models.source import Source, SourceType
 from voucherbot.providers.reddit.client import RedditClient
 from voucherbot.providers.reddit.collector import RedditCollector
 from voucherbot.providers.rss.collector import RssCollector
@@ -51,9 +52,6 @@ async def _seconds_until_next_due() -> float:
     Returns MAX_SLEEP_SECONDS when no eligible source has a future due time,
     so the loop never busy-spins on an empty or all-disabled source list.
     """
-    from voucherbot.config.settings import settings
-    from voucherbot.models.source import SourceType
-
     now = datetime.now(timezone.utc)
     async with session_scope() as session:
         stmt = (

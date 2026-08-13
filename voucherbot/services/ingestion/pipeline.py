@@ -23,11 +23,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import CursorResult, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -295,9 +295,6 @@ async def _process_one_source(
         except IntegrityError:
             stats["unchanged"] += 1
             continue
-
-        from typing import cast
-        from sqlalchemy import CursorResult
 
         if cast(CursorResult[Any], result).rowcount == 0:
             # Check if existing post is stuck from a previously failed run.

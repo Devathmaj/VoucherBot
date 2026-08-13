@@ -4,7 +4,9 @@ from typing import Any
 import asyncio
 import json
 import re
+import urllib.request
 import structlog
+import httpx
 from lxml import etree
 import feedparser
 from bs4 import BeautifulSoup
@@ -162,7 +164,12 @@ class RssCollector(BaseCollector):
         except RobotsDisallowedError:
             logger.info("RssCollector: skipped (robots.txt)", feed_url=feed_url)
             return []
-        except Exception as e:
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (401, 403):
+                logger.warning("RssCollector: blocked by auth", feed_url=feed_url)
+                return []
+            raise
+        except httpx.HTTPError as e:
             # Fallback for flaky hosts that block httpx but allow urllib with same UA.
             logger.warning(
                 "RssCollector: httpx failed, trying urllib fallback",
@@ -171,8 +178,6 @@ class RssCollector(BaseCollector):
             )
 
             def _fetch() -> tuple[bytes, str | None]:
-                import urllib.request
-
                 req = urllib.request.Request(
                     feed_url, headers=default_headers(accept=_FEED_ACCEPT)
                 )
