@@ -78,15 +78,18 @@ async def send_email(
     subject: str,
     html: str,
     text: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
 ) -> dict[str, Any] | None:
     """
     Send an email via Resend.
 
     Args:
-        to:      Recipient address(es).
-        subject: Email subject line.
-        html:    HTML body.
-        text:    Optional plain-text fallback body.
+        to:              Recipient address(es).
+        subject:         Email subject line.
+        html:            HTML body.
+        text:            Optional plain-text fallback body.
+        idempotency_key: Optional stable key sent as the ``Idempotency-Key``
+            header so Resend won't process the same operation twice on retry.
 
     Returns:
         The Resend API response dict (contains 'id') or None on failure.
@@ -106,6 +109,10 @@ async def send_email(
     if settings.email_reply_to:
         params["reply_to"] = settings.email_reply_to
 
+    options: resend.Emails.SendOptions | None = None
+    if idempotency_key:
+        options = {"idempotency_key": idempotency_key}
+
     try:
         async with _send_lock:
             global _last_send_at
@@ -120,7 +127,7 @@ async def send_email(
                 await asyncio.sleep(delay)
 
             def _send() -> dict[str, Any]:
-                return cast(dict[str, Any], resend.Emails.send(params))
+                return cast(dict[str, Any], resend.Emails.send(params, options))
 
             result = await asyncio.to_thread(_send)
             _last_send_at = time.monotonic()

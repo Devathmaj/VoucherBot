@@ -39,6 +39,7 @@ def set_process_boot_at(value: datetime | None = None) -> None:
     global PROCESS_BOOT_AT
     PROCESS_BOOT_AT = value if value is not None else datetime.now(timezone.utc)
 
+
 # Default poll intervals (minutes) when config lacks poll_interval_minutes.
 _TIER_DEFAULT_MINUTES = {
     "A": 15,

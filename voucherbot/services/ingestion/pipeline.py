@@ -16,7 +16,10 @@ Stage 3 — Canonical Event Matching
     Score < possible_match_threshold → create new Event.
 
 Stage 4 — Email notification
-    On is_voucher for NEW / POSSIBLE_MATCH / updated posts, email settings.email_id.
+    On is_voucher for NEW / POSSIBLE_MATCH / updated posts, a voucher alert is
+    staged into the notification outbox (same transaction as the pipeline) and
+    delivered with a stable idempotency key; undelivered rows are retried by
+    the scheduler until SENT, then posts.is_notified is set.
 """
 
 from __future__ import annotations
@@ -38,7 +41,10 @@ from voucherbot.models.post import Post, PostStatus
 from voucherbot.models.source import Source, SourceType
 from voucherbot.providers.base import BaseCollector, NormalizedPost
 from voucherbot.services.ai.analyzer import analyze_post_batch
-from voucherbot.services.email.notifications import notify_voucher_found
+from voucherbot.services.email.notifications import (
+    deliver_pending_notifications,
+    stage_voucher_notification,
+)
 from voucherbot.services.ingestion.dedup import identity_hash, content_hash
 from voucherbot.services.ingestion.event_matcher import EventMatcher
 from voucherbot.models.event import MatchConfidence
@@ -388,19 +394,21 @@ async def _process_one_source(
             if confidence not in (MatchConfidence.AUTO_MERGED, MatchConfidence.UPDATED):
                 pending_notifications.append((db_post, extracted))
 
-    # ── Finalise ──────────────────────────────────────────────────────────────
+    # ── Finalise + Stage 4: Email alert (transactional outbox) ───────────────
+    # Delivery intent is persisted BEFORE the commit so the outbox row and the
+    # pipeline data commit atomically — delivery state survives commit failures.
     source.last_checked_utc = datetime.now(timezone.utc)
     source.error_count = 0
+    staged = 0
+    for db_post, extracted in pending_notifications:
+        if await stage_voucher_notification(db, db_post, extracted):
+            staged += 1
     await db.commit()
 
-    # ── Stage 4: Email alert ──────────────────────────────────────────────────
-    notified = 0
-    for db_post, extracted in pending_notifications:
-        sent = await notify_voucher_found(db_post, extracted)
-        if sent:
-            db_post.is_notified = True
-            notified += 1
-    await db.commit()
-    stats["notified"] = notified
+    # Attempt immediate delivery; failures stay PENDING for the scheduler to
+    # retry (idempotency keyed, so replays cannot duplicate emails).
+    stats["notified"] = 0
+    if staged:
+        stats["notified"] = await deliver_pending_notifications(db)
 
     return stats

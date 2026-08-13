@@ -14,10 +14,11 @@ import uuid
 from datetime import datetime, timezone
 
 import structlog
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 
 from voucherbot.config.settings import settings
 from voucherbot.database.connection import session_scope
+from voucherbot.models.notification import NotificationOutbox, NotificationStatus
 from voucherbot.models.source import Source, SourceType
 from voucherbot.providers.reddit.client import RedditClient
 from voucherbot.providers.reddit.collector import RedditCollector
@@ -26,6 +27,7 @@ from voucherbot.providers.website.collector import WebsiteCollector
 from voucherbot.providers.pearsonvue.collector import PearsonVUECollector
 from voucherbot.providers.training_provider.collector import TrainingProviderCollector
 from voucherbot.services.dispatcher import dispatch_tick
+from voucherbot.services.email.notifications import retry_pending_notifications
 
 logger = structlog.get_logger(__name__)
 
@@ -43,6 +45,9 @@ _loop_task: asyncio.Task[Any] | None = None
 # Hard ceiling on how long we sleep between sweeps (6 hours).
 # Prevents the loop from sleeping forever if all sources have distant due times.
 MAX_SLEEP_SECONDS = 6 * 3600
+# Short cap applied while notification outbox rows are PENDING so undelivered
+# voucher alerts are retried promptly even when no source is due.
+_EMAIL_RETRY_INTERVAL_SECONDS = 60
 
 
 async def _seconds_until_next_due() -> float:
@@ -51,8 +56,11 @@ async def _seconds_until_next_due() -> float:
 
     Returns MAX_SLEEP_SECONDS when no eligible source has a future due time,
     so the loop never busy-spins on an empty or all-disabled source list.
+    Capped at _EMAIL_RETRY_INTERVAL_SECONDS while notification outbox rows are
+    pending, so undelivered emails are retried promptly.
     """
     now = datetime.now(timezone.utc)
+    pending = 0
     async with session_scope() as session:
         stmt = (
             select(Source.next_due_at)
@@ -67,9 +75,17 @@ async def _seconds_until_next_due() -> float:
             stmt = stmt.where(Source.type != SourceType.REDDIT)
         result = await session.execute(stmt)
         next_due = result.scalar_one_or_none()
+        pending = (
+            await session.scalar(
+                select(func.count())
+                .select_from(NotificationOutbox)
+                .where(NotificationOutbox.status == NotificationStatus.PENDING)
+            )
+            or 0
+        )
 
     if next_due is None:
-        return MAX_SLEEP_SECONDS
+        return _EMAIL_RETRY_INTERVAL_SECONDS if pending else MAX_SLEEP_SECONDS
 
     if next_due.tzinfo is None:
         next_due = next_due.replace(tzinfo=timezone.utc)
@@ -79,6 +95,8 @@ async def _seconds_until_next_due() -> float:
     # immediately but yield the event loop first to avoid a tight spin.
     if remaining <= 0:
         return 1.0
+    if pending:
+        return min(remaining, _EMAIL_RETRY_INTERVAL_SECONDS)
     return min(remaining, MAX_SLEEP_SECONDS)
 
 
@@ -128,6 +146,9 @@ async def _run_loop() -> None:
         try:
             ran = await _run_sweep()
             logger.info("scheduler: sweep complete", sources_ran=ran)
+            # Retry undelivered voucher alerts (idempotency keyed) even when
+            # no source ran; failed rows are re-attempted on later sweeps.
+            await retry_pending_notifications()
             sleep_seconds = await _seconds_until_next_due()
             logger.info(
                 "scheduler: sleeping until next sweep",
