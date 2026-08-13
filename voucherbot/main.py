@@ -10,7 +10,7 @@ from voucherbot.config.settings import settings
 from voucherbot.core.logging import setup_logging
 from voucherbot.database.connection import session_scope
 from voucherbot.models.source import Source
-from voucherbot.services.dispatcher import reset_lease
+from voucherbot.services.dispatcher import reset_lease, set_process_boot_at
 from voucherbot.services.scheduler import start_scheduler, stop_scheduler
 
 logger = structlog.get_logger()
@@ -19,6 +19,7 @@ logger = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     setup_logging()
+    set_process_boot_at()
     await logger.ainfo("Starting up VoucherBot API...", is_prod=settings.is_prod)
     # Non-prod: create tables + seed. Production uses a DML-only DB role, so
     # schema/setup must be applied ahead of time (alembic + admin bootstrap).

@@ -27,6 +27,17 @@ logger = structlog.get_logger(__name__)
 LOCK_NAME = "pipeline"
 PROCESS_BOOT_AT = datetime.now(timezone.utc)
 
+
+def set_process_boot_at(value: datetime | None = None) -> None:
+    """Record the real process start time.
+
+    Called during app startup (lifespan) so lease-staleness checks reflect the
+    actual boot, not module import time (uvicorn ``--preload`` imports modules
+    in the master before workers fork).
+    """
+    global PROCESS_BOOT_AT
+    PROCESS_BOOT_AT = value if value is not None else datetime.now(timezone.utc)
+
 # Default poll intervals (minutes) when config lacks poll_interval_minutes.
 _TIER_DEFAULT_MINUTES = {
     "A": 15,
@@ -71,7 +82,8 @@ def poll_interval_minutes(source: Source) -> int:
     interval = config.get("poll_interval_minutes")
     if interval is not None:
         try:
-            return int(interval)
+            val = int(interval)
+            return max(1, min(val, 43200))
         except (TypeError, ValueError):
             pass
     tier = source.priority_tier or "C"
