@@ -11,7 +11,10 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from asyncpg.exceptions import ConnectionDoesNotExistError, InterfaceError
+from asyncpg.exceptions import (  # type: ignore[import-untyped]
+    ConnectionDoesNotExistError,
+    InterfaceError,
+)
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from voucherbot.database import bootstrap

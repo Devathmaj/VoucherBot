@@ -227,7 +227,9 @@ async def test_call_groq_model_returns_parsed_event() -> None:
     assert result is not None
     assert result.is_voucher is True
     settle.assert_awaited_once()
-    assert settle.await_args.args[0] == 1
+    settle_call = settle.await_args
+    assert settle_call is not None
+    assert settle_call.args[0] == 1
 
 
 @pytest.mark.asyncio
@@ -370,7 +372,9 @@ async def test_call_groq_skips_exhausted_models() -> None:
         result = await analyzer._call_groq("Title", "Content")
 
     assert result is expected
-    assert call_model.await_args.args[2] != analyzer._GROQ_BATCH_MODELS[0]
+    call = call_model.await_args
+    assert call is not None
+    assert call.args[2] != analyzer._GROQ_BATCH_MODELS[0]
 
 
 @pytest.mark.asyncio
@@ -528,7 +532,7 @@ class TestAnalyzePost:
 class TestAnalyzePostBatch:
     @pytest.mark.asyncio
     async def test_falls_back_to_analyze_post_without_groq_key(self) -> None:
-        posts = [("Title A", "a"), ("Title B", "b")]
+        posts: list[tuple[str, str | None]] = [("Title A", "a"), ("Title B", "b")]
         expected = ExtractedEvent(is_voucher=True, confidence=0.6)
         with (
             patch(
@@ -554,7 +558,7 @@ class TestAnalyzePostBatch:
 
     @pytest.mark.asyncio
     async def test_preserves_input_order(self) -> None:
-        posts = [("Title A", "a"), ("Title B", "b")]
+        posts: list[tuple[str, str | None]] = [("Title A", "a"), ("Title B", "b")]
 
         async def _fake_call(
             title: str, content: str | None, model: str, source_name: str | None = None
@@ -578,7 +582,7 @@ class TestAnalyzePostBatch:
 
     @pytest.mark.asyncio
     async def test_uses_gemini_when_all_groq_models_exhausted(self) -> None:
-        posts = [("Title A", "a")]
+        posts: list[tuple[str, str | None]] = [("Title A", "a")]
         expected = ExtractedEvent(is_voucher=True, confidence=0.5)
         with (
             patch("voucherbot.services.ai.analyzer.settings", _settings()),

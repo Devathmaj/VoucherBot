@@ -9,20 +9,21 @@ DB-backed orchestration paths in ``_process_one_source`` /
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from voucherbot.config.settings import settings as pipeline_settings
 from voucherbot.models.event import MatchConfidence
 from voucherbot.models.post import PostStatus
-from voucherbot.models.source import SourceType
+from voucherbot.models.source import Source, SourceType
 from voucherbot.providers.base import NormalizedPost
 from voucherbot.services.ai.schema import ExtractedEvent
 from voucherbot.services.ingestion import pipeline
 
 
-def _source(**overrides: object) -> SimpleNamespace:
+def _source(**overrides: object) -> Source:
     base = dict(
         id=1,
         name="rss:test",
@@ -33,7 +34,7 @@ def _source(**overrides: object) -> SimpleNamespace:
         error_count=5,
     )
     base.update(overrides)
-    return SimpleNamespace(**base)
+    return cast(Source, SimpleNamespace(**base))
 
 
 def _post(url: str, title: str, content: str | None = None) -> NormalizedPost:
@@ -128,7 +129,7 @@ class TestResolveVendor:
 
 
 class TestResolveCollector:
-    def _collectors(self) -> dict[str, object]:
+    def _collectors(self) -> dict[str, Any]:
         return {
             "reddit": object(),
             "rss": object(),
@@ -185,7 +186,7 @@ class TestFetchLimitForSource:
         assert pipeline._fetch_limit_for_source(source, fetch_limit=7) == 7
 
     def test_reddit_uses_setting(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(pipeline.settings, "reddit_fetch_limit", 42)
+        monkeypatch.setattr(pipeline_settings, "reddit_fetch_limit", 42)
         source = _source(type=SourceType.REDDIT, config={})
         assert pipeline._fetch_limit_for_source(source) == 42
 
@@ -235,7 +236,7 @@ class _NestedCtx:
 
 
 def _fake_db(
-    keywords: list[object],
+    keywords: list[Any],
     db_post: object | None,
     *,
     upsert_rowcount: int = 1,
@@ -300,7 +301,7 @@ async def test_process_one_source_new_voucher_full_pipeline() -> None:
     )
     collector = AsyncMock()
     collector.collect.return_value = [post]
-    keywords = [SimpleNamespace(keyword="voucher", score=5)]
+    keywords: list[Any] = [SimpleNamespace(keyword="voucher", score=5)]
     db_post = SimpleNamespace(id=99, event_id=None, ai_result=None, status=None)
     db = _fake_db(keywords, db_post)
     extracted = ExtractedEvent(is_voucher=True, confidence=0.9, vendor="aws")
@@ -344,7 +345,7 @@ async def test_process_one_source_ai_filters_non_voucher() -> None:
     post = _post("https://example.com/voucher", "Free exam voucher", "promo")
     collector = AsyncMock()
     collector.collect.return_value = [post]
-    keywords = [SimpleNamespace(keyword="voucher", score=5)]
+    keywords: list[Any] = [SimpleNamespace(keyword="voucher", score=5)]
     db_post = SimpleNamespace(id=99, event_id=None, ai_result=None, status=None)
     db = _fake_db(keywords, db_post)
     extracted = ExtractedEvent(is_voucher=False, confidence=0.2)
@@ -379,7 +380,7 @@ async def test_process_one_source_skips_ai_result_none() -> None:
     post = _post("https://example.com/voucher", "Free exam voucher", "promo")
     collector = AsyncMock()
     collector.collect.return_value = [post]
-    keywords = [SimpleNamespace(keyword="voucher", score=5)]
+    keywords: list[Any] = [SimpleNamespace(keyword="voucher", score=5)]
     db_post = SimpleNamespace(id=99, event_id=None, ai_result=None, status=None)
     db = _fake_db(keywords, db_post)
 
@@ -408,7 +409,7 @@ async def test_process_one_source_marks_existing_post_unchanged() -> None:
     post = _post("https://example.com/voucher", "Free exam voucher", "promo")
     collector = AsyncMock()
     collector.collect.return_value = [post]
-    keywords = [SimpleNamespace(keyword="voucher", score=5)]
+    keywords: list[Any] = [SimpleNamespace(keyword="voucher", score=5)]
     db = _fake_db(keywords, None, upsert_rowcount=0)
 
     stats = await pipeline._process_one_source(db, source, collector, keywords, 10)
@@ -427,7 +428,11 @@ async def test_process_one_source_marks_existing_post_unchanged() -> None:
 @pytest.mark.asyncio
 async def test_run_pipeline_for_source_no_collector() -> None:
     source = _source(type=SourceType.EVENT, config={})
-    result = await pipeline.run_pipeline_for_source(AsyncMock(), source, {})
+    result = await pipeline.run_pipeline_for_source(
+        AsyncMock(),
+        source,
+        {},
+    )
     assert result == {"errors": 1}
 
 
@@ -452,12 +457,17 @@ async def test_run_pipeline_for_source_returns_process_stats() -> None:
         kw_result.scalars.return_value.all.return_value = []
         db.execute.return_value = kw_result
         result = await pipeline.run_pipeline_for_source(
-            db, source, {"rss": collector}, fetch_limit=3
+            db,
+            source,
+            {"rss": collector},
+            fetch_limit=3,
         )
 
     assert result == expected
     process.assert_awaited_once()
-    assert process.await_args.args[4] == 3
+    process_call = process.await_args
+    assert process_call is not None
+    assert process_call.args[4] == 3
 
 
 @pytest.mark.asyncio
@@ -479,6 +489,12 @@ async def test_run_pipeline_for_source_uses_default_limit() -> None:
         kw_result = MagicMock()
         kw_result.scalars.return_value.all.return_value = []
         db.execute.return_value = kw_result
-        await pipeline.run_pipeline_for_source(db, source, {"rss": collector})
+        await pipeline.run_pipeline_for_source(
+            db,
+            source,
+            {"rss": collector},
+        )
 
-    assert process.await_args.args[4] == 10
+    process_call = process.await_args
+    assert process_call is not None
+    assert process_call.args[4] == 10

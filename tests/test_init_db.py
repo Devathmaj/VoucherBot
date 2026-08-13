@@ -9,6 +9,7 @@ import pytest
 
 from voucherbot.database import init_db as init
 from voucherbot.database.init_db import _ensure_source_type_enum
+from voucherbot.models.base import Base
 
 
 class _FakeResult:
@@ -108,12 +109,14 @@ async def test_create_all_excludes_views() -> None:
 
     with (
         patch.object(init, "engine", engine),
-        patch.object(init.Base.metadata, "create_all") as create_all,
+        patch.object(Base.metadata, "create_all") as create_all,
     ):
         sync_conn = MagicMock()
         await _init_db()
         run_sync.assert_awaited_once()
-        run_sync.await_args.args[0](sync_conn)
+        run_sync_call = run_sync.await_args
+        assert run_sync_call is not None
+        run_sync_call.args[0](sync_conn)
 
     create_all.assert_called_once()
     assert create_all.call_args.args[0] is sync_conn
@@ -138,5 +141,7 @@ async def test_init_db_runs_enum_migration_then_create_all() -> None:
         await init.init_db()
 
     run_sync.assert_awaited_once()
-    assert callable(run_sync.await_args.args[0])
+    run_sync_call = run_sync.await_args
+    assert run_sync_call is not None
+    assert callable(run_sync_call.args[0])
     enum_conn.__aexit__.assert_awaited_once()

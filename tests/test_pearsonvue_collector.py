@@ -56,17 +56,23 @@ def _response(text: str, status: int = 200) -> httpx.Response:
 class TestElementHasPromoText:
     def test_promo_text_detected(self) -> None:
         soup = BeautifulSoup("<p>Free exam offer</p>", "html.parser")
-        assert _element_has_promo_text(soup.find("p")) is True
+        p_tag = soup.find("p")
+        assert p_tag is not None
+        assert _element_has_promo_text(p_tag) is True
 
     def test_non_promo_text_ignored(self) -> None:
         soup = BeautifulSoup(
             "<p>Comprehensive study guides for certification prep</p>", "html.parser"
         )
-        assert _element_has_promo_text(soup.find("p")) is False
+        p_tag = soup.find("p")
+        assert p_tag is not None
+        assert _element_has_promo_text(p_tag) is False
 
     def test_empty_text_returns_false(self) -> None:
         soup = BeautifulSoup("<p>   </p>", "html.parser")
-        assert _element_has_promo_text(soup.find("p")) is False
+        p_tag = soup.find("p")
+        assert p_tag is not None
+        assert _element_has_promo_text(p_tag) is False
 
 
 class TestFindPromoCardParent:
@@ -75,7 +81,9 @@ class TestFindPromoCardParent:
             '<html><body><div class="card"><section><p>Free exam voucher</p></section></div></body></html>',
             "html.parser",
         )
-        card = _find_promo_card_parent(soup.find("p"))
+        p_tag = soup.find("p")
+        assert p_tag is not None
+        card = _find_promo_card_parent(p_tag)
         assert card is not None
         assert "card" in card["class"]
 
@@ -83,7 +91,9 @@ class TestFindPromoCardParent:
         soup = BeautifulSoup(
             "<html><body><main><p>Free exam</p></main></body></html>", "html.parser"
         )
-        assert _find_promo_card_parent(soup.find("p")) is None
+        p_tag = soup.find("p")
+        assert p_tag is not None
+        assert _find_promo_card_parent(p_tag) is None
 
 
 class TestExtractPromoCards:
@@ -226,6 +236,7 @@ async def test_extracts_promo_cards() -> None:
     post = posts[0]
     assert post.title == "Special Offer: Free Exam"
     assert post.url == "https://www.pearsonvue.com/register"
+    assert post.raw_data is not None
     assert post.raw_data["type"] == "promo_card"
 
 
@@ -239,9 +250,11 @@ async def test_falls_back_to_page_overview() -> None:
         posts = await collector.collect(CONFIG)
 
     assert len(posts) == 1
-    assert posts[0].title == "Pearson VUE — AWS Certification Programs"
-    assert "Last updated: Jan 2026" in posts[0].content or ""
-    assert posts[0].raw_data["type"] == "page_overview"
+    post = posts[0]
+    assert post.title == "Pearson VUE — AWS Certification Programs"
+    assert "Last updated: Jan 2026" in (post.content or "")
+    assert post.raw_data is not None
+    assert post.raw_data["type"] == "page_overview"
 
 
 @pytest.mark.asyncio

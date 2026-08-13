@@ -8,7 +8,7 @@ environment so the tests are fully deterministic.  The module-level
 
 from __future__ import annotations
 
-from typing import Generator
+from typing import Any, Generator
 
 import pytest
 from pydantic import ValidationError
@@ -60,7 +60,7 @@ def _clean_settings_env(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None
     yield
 
 
-def _settings(**overrides: object) -> Settings:
+def _settings(**overrides: Any) -> Settings:
     return Settings(database_url=_DB_URL, _env_file=None, **overrides)  # type: ignore[call-arg]
 
 

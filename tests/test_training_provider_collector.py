@@ -201,9 +201,11 @@ async def test_collect_resolves_relative_urls() -> None:
         )
 
     assert len(posts) == 1
-    assert posts[0].url == "https://www.globalknowledge.com/promotions/promo-1"
-    assert posts[0].raw_data["extractor"] == "gk"
-    assert posts[0].summary == posts[0].content
+    post = posts[0]
+    assert post.url == "https://www.globalknowledge.com/promotions/promo-1"
+    assert post.raw_data is not None
+    assert post.raw_data["extractor"] == "gk"
+    assert post.summary == post.content
 
 
 @pytest.mark.asyncio
