@@ -107,6 +107,10 @@ class Settings(BaseSettings):
     source_backoff_base_minutes: int = 5
     source_backoff_max_minutes: int = 360
 
+    # Content retention: posts older than this many days have their content
+    # column nulled out on each scheduler sweep (all other columns untouched).
+    content_retention_days: int = 7
+
     # AI providers
     gemini_api_key: Optional[str] = None
     groq_api_key: Optional[str] = None

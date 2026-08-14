@@ -27,6 +27,7 @@ from voucherbot.providers.pearsonvue.collector import PearsonVUECollector
 from voucherbot.providers.training_provider.collector import TrainingProviderCollector
 from voucherbot.services.dispatcher import dispatch_tick
 from voucherbot.services.email.notifications import retry_pending_notifications
+from voucherbot.services.retention import purge_expired_post_content
 
 logger = structlog.get_logger(__name__)
 
@@ -146,6 +147,8 @@ async def _run_loop() -> None:
             # Retry undelivered voucher alerts (idempotency keyed) even when
             # no source ran; failed rows are re-attempted on later sweeps.
             await retry_pending_notifications()
+            # Null out content of posts older than the retention window.
+            await purge_expired_post_content()
             sleep_seconds = await _seconds_until_next_due()
             logger.info(
                 "scheduler: sleeping until next sweep",
