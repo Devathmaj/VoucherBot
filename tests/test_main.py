@@ -69,9 +69,7 @@ async def test_lifespan_runs_migrations_when_not_prod(
     monkeypatch.setattr(main_module, "bootstrap_data", fake_bootstrap_data)
     monkeypatch.setattr(main_module, "set_process_boot_at", lambda: None)
     monkeypatch.setattr(main_module, "session_scope", _fake_session_scope)
-    monkeypatch.setattr(
-        main_module, "reset_lease", AsyncMock()
-    )
+    monkeypatch.setattr(main_module, "reset_lease", AsyncMock())
     monkeypatch.setattr(main_module, "start_scheduler", lambda: None)
     monkeypatch.setattr(main_module, "stop_scheduler", AsyncMock())
     monkeypatch.setattr(main_module, "send_test_email", AsyncMock())
@@ -101,9 +99,7 @@ async def test_lifespan_skips_migrations_when_prod(
     monkeypatch.setattr(main_module, "bootstrap_data", fake_bootstrap_data)
     monkeypatch.setattr(main_module, "set_process_boot_at", lambda: None)
     monkeypatch.setattr(main_module, "session_scope", _fake_session_scope)
-    monkeypatch.setattr(
-        main_module, "reset_lease", AsyncMock()
-    )
+    monkeypatch.setattr(main_module, "reset_lease", AsyncMock())
     monkeypatch.setattr(main_module, "start_scheduler", lambda: None)
     monkeypatch.setattr(main_module, "stop_scheduler", AsyncMock())
     monkeypatch.setattr(main_module, "send_test_email", AsyncMock())

@@ -182,9 +182,7 @@ def _pick_groq_model(exclude: set[str] | None = None) -> str | None:
     """
     excluded = exclude or set()
     available = [
-        m
-        for m in _GROQ_BATCH_MODELS
-        if m not in excluded and is_model_available(m)
+        m for m in _GROQ_BATCH_MODELS if m not in excluded and is_model_available(m)
     ]
     if not available:
         return None

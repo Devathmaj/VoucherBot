@@ -28,9 +28,7 @@ from voucherbot.models.vendor_mapping import VendorMapping  # noqa: F401
 config = context.config
 # Escape % as %% so ConfigParser interpolation does not choke on
 # percent-encoded characters in the URL (e.g. %40 for '@' in a password).
-config.set_main_option(
-    "sqlalchemy.url", settings.database_url.replace("%", "%%")
-)
+config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -53,9 +51,8 @@ def include_object(
     in migrations, never as tables by ``create_all``. Without this filter
     ``alembic check`` would perpetually report them as missing tables.
     """
-    return not (
-        type_ == "table" and object.info.get("is_view")
-    )
+    return not (type_ == "table" and object.info.get("is_view"))
+
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
