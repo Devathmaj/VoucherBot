@@ -7,9 +7,10 @@ The public function ``analyze_post`` accepts raw post text and returns a
 canonical ``ExtractedEvent`` (defined in ``voucherbot.services.ai.schema``).
 
 Internally, providers are tried in priority order:
-  1. Groq / llama-3.1-8b-instant  (primary)
-  2. Groq / openai/gpt-oss-120b   (fallback on non-429 failure)
-  3. Gemini                        (final fallback on non-429 failure)
+  1. Groq — each post routed to a model with weighted probability:
+     openai/gpt-oss-20b (40%), openai/gpt-oss-120b (40%),
+     llama-3.3-70b-versatile (20%)
+  2. Gemini  (final fallback on non-429 failure)
 
 Each adapter is responsible for converting its raw provider response into an
 ``ExtractedEvent``.  The pipeline NEVER depends on which provider responded.
@@ -23,6 +24,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 import json
+import random
 import re
 import time
 import structlog
@@ -101,30 +103,31 @@ _SYSTEM_PROMPT = (
 # ---------------------------------------------------------------------------
 _MAX_RETRIES = 3
 _FALLBACK_WAIT_S = 65
-_GROQ_PRIMARY_MODEL = "llama-3.1-8b-instant"
-_GROQ_FALLBACK_MODEL = "openai/gpt-oss-120b"
-_GROQ_TERTIARY_MODEL = "llama-3.3-70b-versatile"
-# Batch rotation order — posts distributed round-robin across these.
-# llama-3.3-70b-versatile is last (index 2) to conserve its tight 100K TPD.
-_GROQ_BATCH_MODELS = [_GROQ_PRIMARY_MODEL, _GROQ_FALLBACK_MODEL, _GROQ_TERTIARY_MODEL]
+# Weighted Groq routing. Each post is routed to one of these models with the
+# given probability (40% / 40% / 20%). openai/gpt-oss-20b and
+# openai/gpt-oss-120b both carry a 200K token/day quota; llama-3.3-70b-versatile
+# carries a 100K token/day quota.
+_GROQ_MODEL_WEIGHTS: dict[str, float] = {
+    "openai/gpt-oss-20b": 40,
+    "openai/gpt-oss-120b": 40,
+    "llama-3.3-70b-versatile": 20,
+}
+_GROQ_BATCH_MODELS: list[str] = list(_GROQ_MODEL_WEIGHTS.keys())
 
 _GROQ_MODEL_TPM = {
     "openai/gpt-oss-120b": 8000,
     "openai/gpt-oss-20b": 8000,
     "llama-3.3-70b-versatile": 12000,
-    "llama-3.1-8b-instant": 6000,
 }
 _GROQ_MODEL_TPD = {
     "openai/gpt-oss-120b": 200_000,
     "openai/gpt-oss-20b": 200_000,
     "llama-3.3-70b-versatile": 100_000,
-    "llama-3.1-8b-instant": 500_000,
 }
 _GROQ_MODEL_RPD = {
     "openai/gpt-oss-120b": 1_000,
     "openai/gpt-oss-20b": 1_000,
     "llama-3.3-70b-versatile": 1_000,
-    "llama-3.1-8b-instant": 14_400,
 }
 
 # Global cap: max concurrent AI calls across all models combined.
@@ -171,6 +174,26 @@ def is_model_available(model: str) -> bool:
     return not state.daily_exhausted
 
 
+def _pick_groq_model(exclude: set[str] | None = None) -> str | None:
+    """Pick an available Groq model weighted by ``_GROQ_MODEL_WEIGHTS``.
+
+    ``exclude`` models are skipped (used to fall back to a different model
+    after one has already been tried).  Returns ``None`` if no model remains.
+    """
+    excluded = exclude or set()
+    available = [
+        m
+        for m in _GROQ_BATCH_MODELS
+        if m not in excluded and is_model_available(m)
+    ]
+    if not available:
+        return None
+    if len(available) == 1:
+        return available[0]
+    weights = [_GROQ_MODEL_WEIGHTS[m] for m in available]
+    return random.choices(available, weights=weights, k=1)[0]
+
+
 def _parse_retry_delay(error_str: str) -> float:
     match = re.search(r"retryDelay['\"]:\s*['\"](\\d+(?:\\.\\d+)?)s['\"]", error_str)
     if match:
@@ -181,7 +204,7 @@ def _parse_retry_delay(error_str: str) -> float:
 def _groq_tokens_per_minute(model: str) -> int:
     if settings.groq_tokens_per_minute:
         return settings.groq_tokens_per_minute
-    return _GROQ_MODEL_TPM.get(model, 6000)
+    return _GROQ_MODEL_TPM.get(model, 8000)
 
 
 def _estimate_tokens(text: str) -> int:
@@ -194,8 +217,8 @@ async def _wait_for_groq_budget(estimated_tokens: int, model: str) -> int:
     state = _get_model_state(model)
     rpm = max(1, settings.groq_requests_per_minute)
     tpm = max(1, _groq_tokens_per_minute(model))
-    tpd = _GROQ_MODEL_TPD.get(model, 500_000)
-    rpd = _GROQ_MODEL_RPD.get(model, 14_400)
+    tpd = _GROQ_MODEL_TPD.get(model, 200_000)
+    rpd = _GROQ_MODEL_RPD.get(model, 1_000)
     estimated_tokens = min(estimated_tokens, tpm)
 
     async with state.lock:
@@ -261,8 +284,8 @@ async def _settle_groq_budget(
 ) -> None:
     """Replace reservation with actual token count and update daily counters."""
     state = _get_model_state(model)
-    tpd = _GROQ_MODEL_TPD.get(model, 500_000)
-    rpd = _GROQ_MODEL_RPD.get(model, 14_400)
+    tpd = _GROQ_MODEL_TPD.get(model, 200_000)
+    rpd = _GROQ_MODEL_RPD.get(model, 1_000)
     async with state.lock:
         if state.reservations.pop(reservation_id, None) is not None:
             # Use current time so the entry sits correctly in the sliding window
@@ -397,14 +420,20 @@ async def _call_groq_model(
 async def _call_groq(
     title: str, content: str | None, source_name: str | None = None
 ) -> ExtractedEvent | None:
-    """Try all batch models in order, skipping daily-exhausted ones."""
-    for model in _GROQ_BATCH_MODELS:
-        if not is_model_available(model):
-            continue
+    """Try Groq models weighted 40/40/20, skipping daily-exhausted ones.
+
+    The first pick follows ``_GROQ_MODEL_WEIGHTS``; on failure the remaining
+    available models are tried as fallback.
+    """
+    tried: set[str] = set()
+    while True:
+        model = _pick_groq_model(exclude=tried)
+        if model is None:
+            return None
+        tried.add(model)
         result = await _call_groq_model(title, content, model, source_name)
         if result is not None:
             return result
-    return None
 
 
 async def _call_gemini(
@@ -458,7 +487,7 @@ async def analyze_post(
 ) -> ExtractedEvent | None:
     """Extract structured promotion data from a single post.
 
-    Provider priority: Groq/llama (primary) → Groq/gpt-oss (fallback) → Gemini (final fallback).
+    Provider priority: Groq (primary, weighted 40/40/20) → Gemini (final fallback).
     Fallback is triggered only on non-429 failures; 429s are retried within each provider.
     """
     if settings.groq_api_key:
@@ -485,32 +514,30 @@ async def analyze_post_batch(
 ) -> list[ExtractedEvent | None]:
     """Analyze multiple posts concurrently, distributing across available Groq models.
 
-    Each model gets a semaphore sized to its TPM capacity so we don't fire more
-    concurrent requests than the budget can absorb. Posts are round-robin assigned
-    to available models; on per-model failure the next available model is tried,
-    then Gemini as final fallback.
+    Each post is assigned a Groq model weighted 40/40/20 per
+    ``_GROQ_MODEL_WEIGHTS``; on per-model failure the remaining available
+    models are tried, then Gemini as final fallback.
     Returns results in the same order as the input list.
     """
     if not settings.groq_api_key or not posts:
         return [await analyze_post(t, c, source_name) for t, c in posts]
 
-    available = [m for m in _GROQ_BATCH_MODELS if is_model_available(m)]
-    if not available:
+    if not any(is_model_available(m) for m in _GROQ_BATCH_MODELS):
         logger.warning(
             "ai.analyzer: all Groq models daily-exhausted, falling back to Gemini"
         )
         return [await _call_gemini(t, c, source_name) for t, c in posts]
 
-    n = len(available)
-
     async def _call_one(
         idx: int, title: str, content: str | None
     ) -> tuple[int, ExtractedEvent | None]:
         async with _GLOBAL_AI_SEMAPHORE:
-            for attempt_offset in range(n):
-                model = available[(idx + attempt_offset) % n]
-                if not is_model_available(model):
-                    continue
+            tried: set[str] = set()
+            while True:
+                model = _pick_groq_model(exclude=tried)
+                if model is None:
+                    break
+                tried.add(model)
                 result = await _call_groq_model(title, content, model, source_name)
                 if result is not None:
                     return idx, result
