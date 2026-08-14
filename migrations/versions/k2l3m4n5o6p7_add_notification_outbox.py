@@ -1,7 +1,7 @@
 """Add notification_outbox table
 
 Revision ID: k2l3m4n5o6p7
-Revises: i9j0k1l2m3n4
+Revises: j0k1l2m3n4o5
 Create Date: 2026-08-13
 
 Changes
@@ -17,14 +17,21 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy import inspect
 
 revision: str = "k2l3m4n5o6p7"
-down_revision: Union[str, Sequence[str], None] = "i9j0k1l2m3n4"
+down_revision: Union[str, Sequence[str], None] = "j0k1l2m3n4o5"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    existing = {t for t in inspector.get_table_names()}
+    if "notification_outbox" in existing:
+        return
+
     op.create_table(
         "notification_outbox",
         sa.Column("id", sa.Integer(), primary_key=True),
