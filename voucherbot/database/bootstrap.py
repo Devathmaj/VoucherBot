@@ -564,6 +564,22 @@ SOURCE_DEFINITIONS: list[dict[str, Any]] = [
         priority_tier="C",
         note="Requires browser-like User-Agent + Accept headers (403 without them).",
     ),
+    _page(
+        "AWSCertifications Wiki Vouchers",
+        "https://awscertifications.github.io/AWSCertificationsWiki/vouchers-discounts/",
+        SourceType.WEBSITE,
+        vendor="AWS",
+        article_selector="article.md-content__inner",
+        title_selector="h1",
+        link_selector="self",
+        priority_tier="C",
+        priority=2,
+        note=(
+            "r/AWSCertifications community wiki tracking AWS exam vouchers, "
+            "discounts, coupons and promotions. Single MkDocs document with no "
+            "per-card wrappers — parsed as one post per crawl."
+        ),
+    ),
     # ── RSS/news feeds (from parser.py) ───────────────────────────────────
     _feed(
         "Petri IT",
@@ -1099,6 +1115,11 @@ VENDOR_MAPPINGS: list[dict[str, str | None]] = [
         "url_pattern": "https://www.pluralsight.com/",
         "source_name_pattern": None,
         "vendor": "pluralsight",
+    },
+    {
+        "url_pattern": "https://awscertifications.github.io/",
+        "source_name_pattern": None,
+        "vendor": "aws",
     },
     # ── Source-name-pattern entries (fallback) ───────────────────────────
     {"url_pattern": None, "source_name_pattern": "aws training", "vendor": "aws"},
