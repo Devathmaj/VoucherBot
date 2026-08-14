@@ -251,9 +251,11 @@ async def test_mark_failure_applies_backoff() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pick_due_source_skips_reddit_when_disabled(
+async def test_pick_due_source_includes_reddit_when_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """REDDIT_INGESTION_ENABLED=false must not stop Reddit sources from being
+    picked — it only gates the PRAW API path in the collector (RSS still runs)."""
     from voucherbot.services.dispatcher import _pick_due_source
 
     monkeypatch.setattr(
@@ -269,5 +271,4 @@ async def test_pick_due_source_skips_reddit_when_disabled(
 
     stmt = session.execute.call_args.args[0]
     compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
-    assert "REDDIT" in compiled.upper()
-    assert "!=" in compiled or "<>" in compiled
+    assert "REDDIT" not in compiled.upper()

@@ -12,6 +12,8 @@ import pytest
 from voucherbot.database.bootstrap import SOURCE_DEFINITIONS
 from voucherbot.providers.base import NormalizedPost
 from voucherbot.providers.http_policy import clear_policy_caches, scraper_user_agent
+from voucherbot.providers.reddit.client import RedditClient
+from voucherbot.providers.reddit.collector import RedditCollector
 from voucherbot.providers.rss.collector import (
     RssCollector,
     _feed_content_type_is_plausible,
@@ -368,3 +370,110 @@ async def test_website_collector_uses_article_text_when_title_selector_misses() 
 
     assert len(posts) == 1
     assert posts[0].title == "Standalone heading"
+
+
+class _FakeRedditPost:
+    permalink = "/r/AWSCertifications/comments/abc/free_voucher/"
+    title = "Free AWS exam voucher"
+    selftext = "Use code FREEAWS"
+    created_utc = 1700000000.0
+    score = 42
+    num_comments = 7
+    url = "https://aws.amazon.com/certification/"
+    link_flair_text = "Deal"
+
+
+class _ConfiguredRedditClient(RedditClient):
+    is_configured = True
+
+    def __init__(self) -> None:
+        self.fetch_calls = 0
+        self.search_calls = 0
+
+    async def fetch_new_posts(self, subreddit_name: str, limit: int = 25) -> list[Any]:
+        self.fetch_calls += 1
+        return [_FakeRedditPost()]
+
+    async def search_posts(
+        self, query: str, subreddit_name: str = "all", limit: int = 25
+    ) -> list[Any]:
+        self.search_calls += 1
+        return [_FakeRedditPost()]
+
+
+class _UnconfiguredRedditClient(_ConfiguredRedditClient):
+    is_configured = False
+
+
+@pytest.mark.asyncio
+async def test_reddit_collector_uses_rss_when_ingestion_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "voucherbot.providers.reddit.collector.settings.reddit_ingestion_enabled",
+        False,
+    )
+    collector = RedditCollector(_ConfiguredRedditClient())
+    response: httpx.Response = _mock_response(
+        "https://www.reddit.com/r/AWSCertifications/new.rss",
+        content=SAMPLE_RSS,
+    )
+    mock_get = AsyncMock(return_value=response)
+
+    with patch("voucherbot.providers.reddit.collector.polite_get", new=mock_get):
+        posts: list[NormalizedPost] = await collector.collect(
+            {"subreddit": "AWSCertifications"}, limit=5
+        )
+
+    assert len(posts) == 1
+    assert posts[0].url == "https://example.com/voucher"
+    mock_get.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_reddit_collector_uses_rss_when_not_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "voucherbot.providers.reddit.collector.settings.reddit_ingestion_enabled",
+        True,
+    )
+    collector = RedditCollector(_UnconfiguredRedditClient())
+    response: httpx.Response = _mock_response(
+        "https://www.reddit.com/r/AWSCertifications/new.rss",
+        content=SAMPLE_RSS,
+    )
+    mock_get = AsyncMock(return_value=response)
+
+    with patch("voucherbot.providers.reddit.collector.polite_get", new=mock_get):
+        posts: list[NormalizedPost] = await collector.collect(
+            {"subreddit": "AWSCertifications"}, limit=5
+        )
+
+    assert len(posts) == 1
+    assert posts[0].url == "https://example.com/voucher"
+    mock_get.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_reddit_collector_uses_api_when_enabled_and_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "voucherbot.providers.reddit.collector.settings.reddit_ingestion_enabled",
+        True,
+    )
+    client = _ConfiguredRedditClient()
+    collector = RedditCollector(client)
+
+    posts: list[NormalizedPost] = await collector.collect(
+        {"subreddit": "AWSCertifications"}, limit=5
+    )
+
+    assert len(posts) == 1
+    assert (
+        posts[0].url
+        == "https://www.reddit.com/r/AWSCertifications/comments/abc/free_voucher/"
+    )
+    assert client.fetch_calls == 1
+    assert client.search_calls == 0

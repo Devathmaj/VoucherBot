@@ -15,7 +15,9 @@ from asyncpg.exceptions import (  # type: ignore[import-untyped]
     ConnectionDoesNotExistError,
     InterfaceError,
 )
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import DBAPIError, IntegrityError
+from sqlalchemy.sql.dml import Update
 
 from voucherbot.database import bootstrap
 from voucherbot.models.source import SourceType
@@ -250,6 +252,27 @@ async def test_seed_keywords_upserts_all_and_commits() -> None:
     await bootstrap._seed_keywords(db)
     assert db.execute.await_count == len(bootstrap.KEYWORDS)
     db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_seed_reddit_sources_upserts_active_and_disables_stale() -> None:
+    db = AsyncMock()
+    await bootstrap._seed_reddit_sources(db)
+
+    calls = [c.args[0] for c in db.execute.call_args_list]
+    # One INSERT per active subreddit plus one UPDATE disabling stale sources.
+    assert len(calls) == len(bootstrap.HIGH_SIGNAL_REDDIT_SUBREDDITS) + 1
+    db.commit.assert_awaited_once()
+
+    updates = [s for s in calls if isinstance(s, Update)]
+    assert len(updates) == 1
+
+    compiled = updates[0].compile(dialect=postgresql.dialect())  # type: ignore[no-untyped-call]
+    sql = str(compiled)
+    assert "UPDATE sources SET enabled" in sql
+    assert "NOT IN" in sql
+    assert "sources.type" in sql
+    assert compiled.params["enabled"] is False
 
 
 # ---------------------------------------------------------------------------

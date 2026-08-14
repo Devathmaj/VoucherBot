@@ -19,7 +19,7 @@ from sqlalchemy.exc import DBAPIError
 
 from voucherbot.config.settings import settings
 from voucherbot.database.connection import session_scope
-from voucherbot.models.source import Source, SourceType
+from voucherbot.models.source import Source
 from voucherbot.providers.base import BaseCollector
 from voucherbot.services.ingestion.pipeline import run_pipeline_for_source
 
@@ -188,8 +188,6 @@ async def _pick_due_source(session: AsyncSession) -> Source | None:
         or_(Source.next_due_at.is_(None), Source.next_due_at <= now),
         or_(Source.backoff_until.is_(None), Source.backoff_until <= now),
     ]
-    if not settings.reddit_ingestion_enabled:
-        filters.append(Source.type != SourceType.REDDIT)
 
     result = await session.execute(
         select(Source)

@@ -7,6 +7,7 @@ import asyncio
 import feedparser
 import structlog
 
+from voucherbot.config.settings import settings
 from voucherbot.providers.base import BaseCollector, NormalizedPost
 from voucherbot.providers.reddit.client import RedditClient
 from voucherbot.providers.http_policy import (
@@ -34,7 +35,7 @@ class RedditCollector(BaseCollector):
             )
             return []
 
-        if not self.client.is_configured:
+        if not settings.reddit_ingestion_enabled or not self.client.is_configured:
             return await self._collect_via_rss(source_config, limit)
 
         query_terms = source_config.get("query_terms") or []
@@ -58,20 +59,13 @@ class RedditCollector(BaseCollector):
         results: list[NormalizedPost] = []
 
         for post in raw_posts:
-            author_name = "[deleted]"
-            if post.author:
-                try:
-                    author_name = post.author.name
-                except Exception:
-                    pass
-
             results.append(
                 NormalizedPost(
                     url=f"https://www.reddit.com{post.permalink}",
                     title=post.title,
                     content=post.selftext or None,
                     summary=None,
-                    author=author_name,
+                    author=None,
                     published_at=datetime.fromtimestamp(
                         post.created_utc, tz=timezone.utc
                     ),
@@ -137,7 +131,7 @@ class RedditCollector(BaseCollector):
                     title=title,
                     content=entry.get("summary") or None,
                     summary=None,
-                    author=entry.get("author"),
+                    author=None,
                     published_at=None,
                     raw_data={
                         "subreddit": subreddit_name,

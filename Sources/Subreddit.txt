@@ -1,27 +1,33 @@
 # Official Reddit sources (voucherbot/database/bootstrap.py)
-# Reddit ingestion: REDDIT_INGESTION_ENABLED in .env (default false)
+# Reddit OAuth API: REDDIT_INGESTION_ENABLED in .env (default false — RSS-only collection)
 # Fetch limit: 25 posts per poll
 
 # Tier A — every 15 min
 AWSCertifications
 AzureCertification
-eFreebies
-FREE
 Udemy
 FreeUdemyCoupons
 
 # Tier B — every 60 min
-MicrosoftLearn
+O365Certification
+mcsa
 CompTIA
 ccna
+ccnp
 cissp
 isc2
 redhat
-LinuxCertifications
+linuxadmin
 kubernetes
 googlecloud
 OracleCloud
+salesforce
+vmware
 
-# Disabled — excluded from catalog (too noisy)
-# deals
-# freebies
+# Removed — subreddit does not exist or too noisy for cert-voucher signal
+# MicrosoftLearn (does not exist)
+# LinuxCertifications (does not exist)
+# eFreebies
+# FREE
+# deals (disabled)
+# freebies (disabled)

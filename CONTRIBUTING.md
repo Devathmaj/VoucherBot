@@ -83,7 +83,7 @@ Key obligations that apply directly to this project:
 - **Minimal data collection:** Only collect what is necessary to detect voucher promotions. Do not scrape user profiles, comment histories, or subreddit metadata beyond what the pipeline requires.
 - **No manipulation:** Do not add features that vote, comment, post, or otherwise interact with Reddit on behalf of any user. VoucherBot is read-only with respect to Reddit.
 - **Respect community rules:** Before adding a new subreddit as a source, confirm that scraping or automated reading is not explicitly prohibited by that subreddit's rules or moderators.
-- **Honor disabling:** The `REDDIT_INGESTION_ENABLED` flag exists so the entire Reddit integration can be turned off without a code change. Any new Reddit feature must respect this flag and exit cleanly when it is `false`.
+- **Honor disabling:** The `REDDIT_INGESTION_ENABLED` flag disables the Reddit OAuth API. When it is `false`, the collector must fall back to the public RSS feeds and never call the Reddit API. Any new Reddit API feature must respect this flag and exit cleanly when it is `false`.
 
 ---
 
@@ -186,9 +186,9 @@ The Reddit integration lives in `voucherbot/providers/reddit/`. All Reddit API c
 
 **Rules for this module:**
 
-- The client must check `REDDIT_INGESTION_ENABLED` before making any network call and return an empty result set (not raise) when it is `false`.
+- The collector must check `REDDIT_INGESTION_ENABLED` before making any Reddit OAuth call. When it is `false` — or the OAuth credentials are missing — it must collect via the public RSS feeds and must not raise.
 - Rate limiting logic lives in the client, not the collector. Do not add sleep calls or retry loops in the collector.
-- The RSS fallback must be triggered only when the OAuth API is unavailable or returns a retriable error — not as a way to avoid rate limits.
+- The RSS path is used when the OAuth API is disabled via `REDDIT_INGESTION_ENABLED=false`, when OAuth credentials are missing, or when OAuth returns a retriable error — not as a way to avoid rate limits.
 - Do not log full post bodies or user metadata at `INFO` level or above. Use `DEBUG` for raw API payloads.
 - The `REDDIT_FETCH_LIMIT` setting caps the number of posts fetched per subreddit per tick. Do not bypass this cap in the collector.
 
@@ -258,7 +258,7 @@ When adding a new feature:
   - [ ] `robots.txt` compliance is preserved.
   - [ ] No default crawl delays have been reduced.
   - [ ] Reddit rate limits and the Responsible Builder Policy are respected.
-  - [ ] `REDDIT_INGESTION_ENABLED=false` still results in a clean no-op.
+  - [ ] `REDDIT_INGESTION_ENABLED=false` still collects Reddit via RSS and makes no OAuth calls.
 - **Size:** Keep PRs reviewable. Prefer several small PRs over one large one.
 - **Migrations:** If the PR includes a migration, note whether it is safe to apply to a live database without downtime.
 

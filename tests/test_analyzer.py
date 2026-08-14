@@ -142,11 +142,46 @@ class TestEstimateTokens:
 
 class TestModelAvailability:
     def test_fresh_model_is_available(self) -> None:
-        assert is_model_available("llama-3.1-8b-instant") is True
+        assert is_model_available("openai/gpt-oss-20b") is True
 
     def test_daily_exhausted_model_is_not_available(self) -> None:
-        _exhaust_daily("llama-3.1-8b-instant")
-        assert is_model_available("llama-3.1-8b-instant") is False
+        _exhaust_daily("openai/gpt-oss-20b")
+        assert is_model_available("openai/gpt-oss-20b") is False
+
+
+class TestPickGroqModel:
+    def test_returns_none_when_all_models_exhausted(self) -> None:
+        for m in analyzer._GROQ_BATCH_MODELS:
+            _exhaust_daily(m)
+        assert analyzer._pick_groq_model() is None
+
+    def test_picks_with_weighted_probabilities(self) -> None:
+        with patch(
+            "voucherbot.services.ai.analyzer.random.choices",
+            return_value=["openai/gpt-oss-20b"],
+        ) as choices:
+            picked = analyzer._pick_groq_model()
+
+        assert picked == "openai/gpt-oss-20b"
+        population = list(choices.call_args.args[0])
+        weights = list(choices.call_args.kwargs["weights"])
+        assert population == analyzer._GROQ_BATCH_MODELS
+        assert weights == [40, 40, 20]
+
+    def test_skips_exhausted_models_when_picking(self) -> None:
+        _exhaust_daily("llama-3.3-70b-versatile")
+        with patch(
+            "voucherbot.services.ai.analyzer.random.choices",
+            return_value=["openai/gpt-oss-20b"],
+        ) as choices:
+            picked = analyzer._pick_groq_model()
+
+        assert picked is not None
+        population = list(choices.call_args.args[0])
+        assert "llama-3.3-70b-versatile" not in population
+        assert "llama-3.3-70b-versatile" not in list(
+            choices.call_args.kwargs["weights"]
+        )
 
 
 def _exhaust_daily(model: str) -> None:
@@ -159,32 +194,32 @@ def _exhaust_daily(model: str) -> None:
 @pytest.mark.asyncio
 async def test_wait_for_budget_reserves_capacity() -> None:
     with patch("voucherbot.services.ai.analyzer.settings", _settings()):
-        rid = await analyzer._wait_for_groq_budget(10, "llama-3.1-8b-instant")
-    state = analyzer._get_model_state("llama-3.1-8b-instant")
+        rid = await analyzer._wait_for_groq_budget(10, "openai/gpt-oss-20b")
+    state = analyzer._get_model_state("openai/gpt-oss-20b")
     assert rid in state.reservations
     assert state.reservations[rid][1] == 10
 
 
 @pytest.mark.asyncio
 async def test_wait_for_budget_raises_on_daily_exhausted() -> None:
-    _exhaust_daily("llama-3.1-8b-instant")
+    _exhaust_daily("openai/gpt-oss-20b")
     with (
         patch("voucherbot.services.ai.analyzer.settings", _settings()),
         pytest.raises(RuntimeError, match="daily_limit"),
     ):
-        await analyzer._wait_for_groq_budget(10, "llama-3.1-8b-instant")
+        await analyzer._wait_for_groq_budget(10, "openai/gpt-oss-20b")
 
 
 @pytest.mark.asyncio
 async def test_wait_for_budget_raises_when_day_tokens_exceeded() -> None:
-    state = analyzer._get_model_state("llama-3.1-8b-instant")
+    state = analyzer._get_model_state("openai/gpt-oss-20b")
     state.day_date = time.strftime("%Y-%m-%d", time.gmtime())
-    state.day_tokens = _GROQ_MODEL_TPD["llama-3.1-8b-instant"]
+    state.day_tokens = _GROQ_MODEL_TPD["openai/gpt-oss-20b"]
     with (
         patch("voucherbot.services.ai.analyzer.settings", _settings()),
         pytest.raises(RuntimeError, match="daily_limit"),
     ):
-        await analyzer._wait_for_groq_budget(10, "llama-3.1-8b-instant")
+        await analyzer._wait_for_groq_budget(10, "openai/gpt-oss-20b")
 
 
 # ---------------------------------------------------------------------------
@@ -221,7 +256,7 @@ async def test_call_groq_model_returns_parsed_event() -> None:
         ) as settle,
     ):
         result = await analyzer._call_groq_model(
-            "Title", "Content", "llama-3.1-8b-instant"
+            "Title", "Content", "openai/gpt-oss-20b"
         )
 
     assert result is not None
@@ -234,13 +269,13 @@ async def test_call_groq_model_returns_parsed_event() -> None:
 
 @pytest.mark.asyncio
 async def test_call_groq_model_skips_when_daily_exhausted() -> None:
-    _exhaust_daily("llama-3.1-8b-instant")
+    _exhaust_daily("openai/gpt-oss-20b")
     with (
         patch("voucherbot.services.ai.analyzer.settings", _settings()),
         patch("voucherbot.services.ai.analyzer.AsyncGroq") as client_factory,
     ):
         result = await analyzer._call_groq_model(
-            "Title", "Content", "llama-3.1-8b-instant"
+            "Title", "Content", "openai/gpt-oss-20b"
         )
 
     assert result is None
@@ -258,7 +293,7 @@ async def test_call_groq_model_returns_none_on_runtime_daily_limit() -> None:
         patch("voucherbot.services.ai.analyzer.AsyncGroq"),
     ):
         result = await analyzer._call_groq_model(
-            "Title", "Content", "llama-3.1-8b-instant"
+            "Title", "Content", "openai/gpt-oss-20b"
         )
 
     assert result is None
@@ -279,7 +314,7 @@ async def test_call_groq_model_retries_on_429_then_succeeds() -> None:
         patch("voucherbot.services.ai.analyzer._settle_groq_budget", new=AsyncMock()),
     ):
         result = await analyzer._call_groq_model(
-            "Title", "Content", "llama-3.1-8b-instant"
+            "Title", "Content", "openai/gpt-oss-20b"
         )
 
     assert result is not None
@@ -302,11 +337,11 @@ async def test_call_groq_model_returns_none_on_daily_429() -> None:
         patch("voucherbot.services.ai.analyzer._settle_groq_budget", new=AsyncMock()),
     ):
         result = await analyzer._call_groq_model(
-            "Title", "Content", "llama-3.1-8b-instant"
+            "Title", "Content", "openai/gpt-oss-20b"
         )
 
     assert result is None
-    assert analyzer._get_model_state("llama-3.1-8b-instant").daily_exhausted is True
+    assert analyzer._get_model_state("openai/gpt-oss-20b").daily_exhausted is True
 
 
 @pytest.mark.asyncio
@@ -322,7 +357,7 @@ async def test_call_groq_model_returns_none_on_non_retryable_failure() -> None:
         patch("voucherbot.services.ai.analyzer._settle_groq_budget", new=AsyncMock()),
     ):
         result = await analyzer._call_groq_model(
-            "Title", "Content", "llama-3.1-8b-instant"
+            "Title", "Content", "openai/gpt-oss-20b"
         )
 
     assert result is None
