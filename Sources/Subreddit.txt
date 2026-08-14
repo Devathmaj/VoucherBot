@@ -5,23 +5,29 @@
 # Tier A — every 15 min
 AWSCertifications
 AzureCertification
-eFreebies
-FREE
 Udemy
 FreeUdemyCoupons
 
 # Tier B — every 60 min
-MicrosoftLearn
+O365Certification
+mcsa
 CompTIA
 ccna
+ccnp
 cissp
 isc2
 redhat
-LinuxCertifications
+linuxadmin
 kubernetes
 googlecloud
 OracleCloud
+salesforce
+vmware
 
-# Disabled — excluded from catalog (too noisy)
-# deals
-# freebies
+# Removed — subreddit does not exist or too noisy for cert-voucher signal
+# MicrosoftLearn (does not exist)
+# LinuxCertifications (does not exist)
+# eFreebies
+# FREE
+# deals (disabled)
+# freebies (disabled)

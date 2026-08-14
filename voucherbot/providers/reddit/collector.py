@@ -58,20 +58,13 @@ class RedditCollector(BaseCollector):
         results: list[NormalizedPost] = []
 
         for post in raw_posts:
-            author_name = "[deleted]"
-            if post.author:
-                try:
-                    author_name = post.author.name
-                except Exception:
-                    pass
-
             results.append(
                 NormalizedPost(
                     url=f"https://www.reddit.com{post.permalink}",
                     title=post.title,
                     content=post.selftext or None,
                     summary=None,
-                    author=author_name,
+                    author=None,
                     published_at=datetime.fromtimestamp(
                         post.created_utc, tz=timezone.utc
                     ),
@@ -137,7 +130,7 @@ class RedditCollector(BaseCollector):
                     title=title,
                     content=entry.get("summary") or None,
                     summary=None,
-                    author=entry.get("author"),
+                    author=None,
                     published_at=None,
                     raw_data={
                         "subreddit": subreddit_name,

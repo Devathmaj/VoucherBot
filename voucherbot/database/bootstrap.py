@@ -116,18 +116,20 @@ KEYWORDS = [
 HIGH_SIGNAL_REDDIT_SUBREDDITS = [
     "AWSCertifications",
     "AzureCertification",
-    "MicrosoftLearn",
+    "O365Certification",
+    "mcsa",
     "CompTIA",
     "ccna",
+    "ccnp",
     "cissp",
     "isc2",
     "redhat",
-    "LinuxCertifications",
+    "linuxadmin",
     "kubernetes",
     "googlecloud",
     "OracleCloud",
-    "eFreebies",
-    "FREE",
+    "salesforce",
+    "vmware",
     "Udemy",
     "FreeUdemyCoupons",
 ]
@@ -138,8 +140,6 @@ DISABLED_REDDIT_SUBREDDITS = {"deals", "freebies"}
 TIER_A_REDDIT_SUBS = {
     "AWSCertifications",
     "AzureCertification",
-    "eFreebies",
-    "FREE",
     "Udemy",
     "FreeUdemyCoupons",
 }
@@ -1568,7 +1568,8 @@ async def _seed_keywords(db: AsyncSession) -> None:
 
 
 async def _seed_reddit_sources(db: AsyncSession) -> None:
-    """Upsert Reddit subreddit sources."""
+    """Upsert Reddit subreddit sources and disable ones removed from the catalog."""
+    active_names = {f"reddit:{sub.lower()}" for sub in HIGH_SIGNAL_REDDIT_SUBREDDITS}
     for sub in HIGH_SIGNAL_REDDIT_SUBREDDITS:
         tier = _reddit_tier(sub)
         cadence = _TIER_CADENCE_MINUTES[tier]
@@ -1590,6 +1591,16 @@ async def _seed_reddit_sources(db: AsyncSession) -> None:
             )
             .on_conflict_do_nothing(index_elements=["name"]),
         )
+    # Disable any reddit source no longer part of the active catalog so stale
+    # subreddits stop being fetched on the next bootstrap.
+    await db.execute(
+        update(Source)
+        .where(
+            Source.type == SourceType.REDDIT,
+            Source.name.notin_(active_names),
+        )
+        .values(enabled=False),
+    )
     await db.commit()
 
 
