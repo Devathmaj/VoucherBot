@@ -40,7 +40,11 @@ def test_run_migrations_points_at_project_head(monkeypatch: pytest.MonkeyPatch) 
         captured["script_location"] = cfg.get_main_option("script_location")
         captured["config_file_name"] = cfg.config_file_name
 
-    monkeypatch.setattr(main_module.alembic_command, "upgrade", fake_upgrade)
+    monkeypatch.setattr(
+        main_module.alembic_command,  # type: ignore[attr-defined]
+        "upgrade",
+        fake_upgrade,
+    )
 
     run_migrations()
 
@@ -64,7 +68,11 @@ async def test_lifespan_runs_migrations_when_not_prod(
     async def fake_bootstrap_data() -> None:
         calls["bootstrap"] += 1
 
-    monkeypatch.setattr(main_module.settings, "is_prod", False)
+    monkeypatch.setattr(
+        main_module.settings,  # type: ignore[attr-defined]
+        "is_prod",
+        False,
+    )
     monkeypatch.setattr(main_module, "run_migrations", fake_run_migrations)
     monkeypatch.setattr(main_module, "bootstrap_data", fake_bootstrap_data)
     monkeypatch.setattr(main_module, "set_process_boot_at", lambda: None)
@@ -94,7 +102,11 @@ async def test_lifespan_skips_migrations_when_prod(
     async def fake_bootstrap_data() -> None:
         calls["bootstrap"] += 1
 
-    monkeypatch.setattr(main_module.settings, "is_prod", True)
+    monkeypatch.setattr(
+        main_module.settings,  # type: ignore[attr-defined]
+        "is_prod",
+        True,
+    )
     monkeypatch.setattr(main_module, "run_migrations", fake_run_migrations)
     monkeypatch.setattr(main_module, "bootstrap_data", fake_bootstrap_data)
     monkeypatch.setattr(main_module, "set_process_boot_at", lambda: None)
