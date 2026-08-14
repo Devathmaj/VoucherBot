@@ -8,6 +8,7 @@
 [D] WEBSITE | website:red_hat_training_specials | 720 min | https://www.redhat.com/en/services/training/specials
 [C] WEBSITE | website:msfthub_vouchers | 240 min | https://msfthub.com/vouchers/
 [C] WEBSITE | website:vladtalkstech | 240 min | https://vladtalkstech.com/
+[C] WEBSITE | website:awscertifications_wiki_vouchers | 240 min | https://awscertifications.github.io/AWSCertificationsWiki/vouchers-discounts/
 # ── Pearson VUE vendor pages (scraped) ────────────────────────────────────
 [C] PEARSONVUE | pearsonvue:pearson_vue_aws | 240 min | https://www.pearsonvue.com/us/en/aws.html
 [C] PEARSONVUE | pearsonvue:pearson_vue_microsoft | 240 min | https://www.pearsonvue.com/us/en/microsoft.html
