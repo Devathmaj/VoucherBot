@@ -1,7 +1,7 @@
 """Add notification_outbox table
 
 Revision ID: k2l3m4n5o6p7
-Revises: j0k1l2m3n4o5
+Revises: i9j0k1l2m3n4
 Create Date: 2026-08-13
 
 Changes
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "k2l3m4n5o6p7"
-down_revision: Union[str, Sequence[str], None] = "j0k1l2m3n4o5"
+down_revision: Union[str, Sequence[str], None] = "i9j0k1l2m3n4"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

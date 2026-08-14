@@ -1,11 +1,23 @@
 import pytest
+from contextlib import asynccontextmanager
 from httpx import AsyncClient, ASGITransport
-from typing import Generator
+from typing import AsyncIterator, Generator
 from unittest.mock import AsyncMock, MagicMock
 
+from alembic.config import Config
+
 from voucherbot.main import app
+from voucherbot.main import PROJECT_ROOT, run_migrations
 from voucherbot.api import rate_limit
 from voucherbot.database.connection import get_session
+
+
+@asynccontextmanager
+async def _fake_session_scope() -> AsyncIterator[MagicMock]:
+    session = MagicMock()
+    session.execute = AsyncMock()
+    session.commit = AsyncMock()
+    yield session
 
 
 @pytest.fixture(autouse=True)
@@ -16,6 +28,90 @@ def _override_db_session() -> Generator[None, None, None]:
     app.dependency_overrides[get_session] = lambda: fake_session
     yield
     app.dependency_overrides.clear()
+
+
+def test_run_migrations_points_at_project_head(monkeypatch: pytest.MonkeyPatch) -> None:
+    import voucherbot.main as main_module
+
+    captured: dict[str, object] = {}
+
+    def fake_upgrade(cfg: Config, revision: str) -> None:
+        captured["revision"] = revision
+        captured["script_location"] = cfg.get_main_option("script_location")
+        captured["config_file_name"] = cfg.config_file_name
+
+    monkeypatch.setattr(main_module.alembic_command, "upgrade", fake_upgrade)
+
+    run_migrations()
+
+    assert captured["revision"] == "head"
+    assert captured["config_file_name"] is None
+    assert captured["script_location"] is not None
+    assert str(PROJECT_ROOT / "migrations") in str(captured["script_location"])
+
+
+@pytest.mark.asyncio
+async def test_lifespan_runs_migrations_when_not_prod(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import voucherbot.main as main_module
+
+    calls: dict[str, int] = {"migrations": 0, "bootstrap": 0}
+
+    def fake_run_migrations() -> None:
+        calls["migrations"] += 1
+
+    async def fake_bootstrap_data() -> None:
+        calls["bootstrap"] += 1
+
+    monkeypatch.setattr(main_module.settings, "is_prod", False)
+    monkeypatch.setattr(main_module, "run_migrations", fake_run_migrations)
+    monkeypatch.setattr(main_module, "bootstrap_data", fake_bootstrap_data)
+    monkeypatch.setattr(main_module, "set_process_boot_at", lambda: None)
+    monkeypatch.setattr(main_module, "session_scope", _fake_session_scope)
+    monkeypatch.setattr(
+        main_module, "reset_lease", AsyncMock()
+    )
+    monkeypatch.setattr(main_module, "start_scheduler", lambda: None)
+    monkeypatch.setattr(main_module, "stop_scheduler", AsyncMock())
+    monkeypatch.setattr(main_module, "send_test_email", AsyncMock())
+
+    async with main_module.lifespan(main_module.app):
+        pass
+
+    assert calls == {"migrations": 1, "bootstrap": 1}
+
+
+@pytest.mark.asyncio
+async def test_lifespan_skips_migrations_when_prod(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import voucherbot.main as main_module
+
+    calls: dict[str, int] = {"migrations": 0, "bootstrap": 0}
+
+    def fake_run_migrations() -> None:
+        calls["migrations"] += 1
+
+    async def fake_bootstrap_data() -> None:
+        calls["bootstrap"] += 1
+
+    monkeypatch.setattr(main_module.settings, "is_prod", True)
+    monkeypatch.setattr(main_module, "run_migrations", fake_run_migrations)
+    monkeypatch.setattr(main_module, "bootstrap_data", fake_bootstrap_data)
+    monkeypatch.setattr(main_module, "set_process_boot_at", lambda: None)
+    monkeypatch.setattr(main_module, "session_scope", _fake_session_scope)
+    monkeypatch.setattr(
+        main_module, "reset_lease", AsyncMock()
+    )
+    monkeypatch.setattr(main_module, "start_scheduler", lambda: None)
+    monkeypatch.setattr(main_module, "stop_scheduler", AsyncMock())
+    monkeypatch.setattr(main_module, "send_test_email", AsyncMock())
+
+    async with main_module.lifespan(main_module.app):
+        pass
+
+    assert calls == {"migrations": 0, "bootstrap": 0}
 
 
 @pytest.mark.asyncio

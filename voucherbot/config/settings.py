@@ -62,7 +62,8 @@ SOURCE_PRIORITY: list[str] = [
 
 
 class Settings(BaseSettings):
-    # False → create tables + seed on startup; True → skip (DML-only prod role)
+    # False → apply alembic migrations + seed on startup; True → skip all DB
+    # setup (schema applied ahead of time in production)
     is_prod: bool = False
     # True → seed a localhost test source for development/troubleshooting
     is_test: bool = False

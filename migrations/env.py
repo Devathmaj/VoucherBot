@@ -1,5 +1,6 @@
 import asyncio
 from logging.config import fileConfig
+from typing import Any
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
@@ -15,14 +16,21 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from voucherbot.config.settings import settings
 from voucherbot.models.base import Base
 from voucherbot.models.event import Event  # noqa: F401 – ensures Event is in Base.metadata
-from voucherbot.models.pipeline_lock import PipelineLock  # noqa: F401
-from voucherbot.models.vendor_mapping import VendorMapping  # noqa: F401
+from voucherbot.models.keyword import Keyword  # noqa: F401
 from voucherbot.models.notification import NotificationOutbox  # noqa: F401
+from voucherbot.models.pipeline_lock import PipelineLock  # noqa: F401
+from voucherbot.models.post import Post  # noqa: F401
+from voucherbot.models.source import Source  # noqa: F401
+from voucherbot.models.vendor_mapping import VendorMapping  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Escape % as %% so ConfigParser interpolation does not choke on
+# percent-encoded characters in the URL (e.g. %40 for '@' in a password).
+config.set_main_option(
+    "sqlalchemy.url", settings.database_url.replace("%", "%%")
+)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -30,6 +38,24 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
+
+
+def include_object(
+    object: Any,
+    name: str,
+    type_: str,
+    reflected: bool,
+    compare_to: Any,
+) -> bool:
+    """Skip view-backed models during autogenerate/check.
+
+    Views (e.g. ``voucher_posts``) are created explicitly via ``op.execute``
+    in migrations, never as tables by ``create_all``. Without this filter
+    ``alembic check`` would perpetually report them as missing tables.
+    """
+    return not (
+        type_ == "table" and object.info.get("is_view")
+    )
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -55,6 +81,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -62,7 +89,11 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        include_object=include_object,
+    )
 
     with context.begin_transaction():
         context.run_migrations()
