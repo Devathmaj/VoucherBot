@@ -64,7 +64,7 @@ If checked, confirm all of the following:
 - [ ] `robots.txt` compliance is preserved — the policy layer is not bypassed or disabled.
 - [ ] No default crawl delays have been reduced below `2.0` seconds.
 - [ ] Reddit rate limits (100 req/min) and the Responsible Builder Policy are respected.
-- [ ] `REDDIT_INGESTION_ENABLED=false` still results in a clean no-op.
+- [ ] `REDDIT_INGESTION_ENABLED=false` still collects Reddit via RSS and makes no OAuth calls.
 - [ ] No new direct `httpx` or `aiohttp` calls exist outside the policy layer.
 
 **Explanation:**

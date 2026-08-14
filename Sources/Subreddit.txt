@@ -1,5 +1,5 @@
 # Official Reddit sources (voucherbot/database/bootstrap.py)
-# Reddit ingestion: REDDIT_INGESTION_ENABLED in .env (default false)
+# Reddit OAuth API: REDDIT_INGESTION_ENABLED in .env (default false — RSS-only collection)
 # Fetch limit: 25 posts per poll
 
 # Tier A — every 15 min

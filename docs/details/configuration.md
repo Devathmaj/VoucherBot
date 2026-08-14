@@ -33,7 +33,7 @@ These values are loaded from `.env` through Pydantic settings.
 | `REDDIT_FETCH_INTERVAL_MINUTES` | `3` | Poll cadence used by the Reddit collector |
 | `REDDIT_CONCURRENCY_LIMIT` | `5` | Max concurrent Reddit collection work |
 | `REDDIT_FETCH_LIMIT` | `25` | Maximum number of posts fetched per Reddit poll |
-| `REDDIT_INGESTION_ENABLED` | `false` | Enables or disables Reddit sources in the scheduler |
+| `REDDIT_INGESTION_ENABLED` | `false` | Allow the Reddit OAuth API; when `false`, Reddit is collected via RSS feeds only |
 
 ### Scraping and HTTP policy
 

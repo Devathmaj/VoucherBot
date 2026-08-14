@@ -440,7 +440,7 @@ All settings are loaded from `.env` through `pydantic-settings`.
 | `REDDIT_CLIENT_ID` | — | Reddit API credentials |
 | `REDDIT_CLIENT_SECRET` | — | Reddit API credentials |
 | `REDDIT_USER_AGENT` | — | Reddit API credentials |
-| `REDDIT_INGESTION_ENABLED` | `false` | Enable Reddit sources |
+| `REDDIT_INGESTION_ENABLED` | `false` | Allow the Reddit OAuth API (false → RSS-only collection) |
 | `REDDIT_FETCH_LIMIT` | `25` | Posts per subreddit fetch |
 | `GROQ_API_KEY` | — | Primary AI provider |
 | `GROQ_REQUESTS_PER_MINUTE` | `30` | RPM cap |

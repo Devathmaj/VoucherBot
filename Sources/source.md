@@ -29,7 +29,7 @@ Policy reference: [`deep-research-report (1).md`](../deep-research-report%20(1).
 | Reddit | 25 (`REDDIT_FETCH_LIMIT`) |
 | RSS / Website | 25 |
 
-Reddit ingestion is gated by `REDDIT_INGESTION_ENABLED` in `.env` (default `false`).
+Reddit is collected from public RSS feeds by default. The `REDDIT_INGESTION_ENABLED` flag in `.env` (default `false`) gates only the OAuth API: when `false`, the OAuth API is never called and posts come from the RSS feeds.
 
 ## Policy-blocked HTML sources
 

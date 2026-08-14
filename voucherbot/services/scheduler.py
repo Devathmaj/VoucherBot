@@ -16,10 +16,9 @@ from datetime import datetime, timezone
 import structlog
 from sqlalchemy import func, or_, select
 
-from voucherbot.config.settings import settings
 from voucherbot.database.connection import session_scope
 from voucherbot.models.notification import NotificationOutbox, NotificationStatus
-from voucherbot.models.source import Source, SourceType
+from voucherbot.models.source import Source
 from voucherbot.providers.reddit.client import RedditClient
 from voucherbot.providers.reddit.collector import RedditCollector
 from voucherbot.providers.rss.collector import RssCollector
@@ -71,8 +70,6 @@ async def _seconds_until_next_due() -> float:
             .order_by(Source.next_due_at.asc().nulls_last())
             .limit(1)
         )
-        if not settings.reddit_ingestion_enabled:
-            stmt = stmt.where(Source.type != SourceType.REDDIT)
         result = await session.execute(stmt)
         next_due = result.scalar_one_or_none()
         pending = (

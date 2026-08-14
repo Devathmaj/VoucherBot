@@ -7,6 +7,7 @@ import asyncio
 import feedparser
 import structlog
 
+from voucherbot.config.settings import settings
 from voucherbot.providers.base import BaseCollector, NormalizedPost
 from voucherbot.providers.reddit.client import RedditClient
 from voucherbot.providers.http_policy import (
@@ -34,7 +35,7 @@ class RedditCollector(BaseCollector):
             )
             return []
 
-        if not self.client.is_configured:
+        if not settings.reddit_ingestion_enabled or not self.client.is_configured:
             return await self._collect_via_rss(source_config, limit)
 
         query_terms = source_config.get("query_terms") or []

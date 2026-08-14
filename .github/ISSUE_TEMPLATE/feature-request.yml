@@ -58,7 +58,7 @@ body:
         - label: "`robots.txt` compliance is preserved."
         - label: "No default crawl delays are reduced."
         - label: "Reddit rate limits and the Responsible Builder Policy are respected."
-        - label: "`REDDIT_INGESTION_ENABLED=false` still results in a clean no-op."
+        - label: "`REDDIT_INGESTION_ENABLED=false` still collects Reddit via RSS and makes no OAuth calls."
 
   - type: textarea
     id: policy_explanation
