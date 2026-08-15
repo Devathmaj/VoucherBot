@@ -45,6 +45,7 @@ from voucherbot.services.email.notifications import (
     deliver_pending_notifications,
     stage_voucher_notification,
 )
+from voucherbot.services.bot_notification import send_bot_notification
 from voucherbot.services.ingestion.dedup import identity_hash, content_hash
 from voucherbot.services.ingestion.event_matcher import EventMatcher
 from voucherbot.models.event import MatchConfidence
@@ -204,6 +205,7 @@ async def _process_one_source(
         "events_attached": 0,
         "possible_matches": 0,
         "notified": 0,
+        "bot_notified": 0,
     }
 
     # ── Stage 0: Collect ──────────────────────────────────────────────────────
@@ -410,5 +412,12 @@ async def _process_one_source(
     stats["notified"] = 0
     if staged:
         stats["notified"] = await deliver_pending_notifications(db)
+
+    # Send the same voucher alert to the bot webhook alongside the email.
+    # Best-effort: a webhook failure never fails the pipeline or the email.
+    stats["bot_notified"] = 0
+    for db_post, extracted in pending_notifications:
+        if await send_bot_notification(db_post, extracted):
+            stats["bot_notified"] += 1
 
     return stats
