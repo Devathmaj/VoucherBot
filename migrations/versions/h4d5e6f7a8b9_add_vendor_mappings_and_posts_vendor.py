@@ -67,10 +67,12 @@ def upgrade() -> None:
     op.create_index("ix_posts_vendor", "posts", ["vendor"], unique=False)
 
     # ── 3. Update voucher_posts view ──────────────────────────────────────────
+    # CREATE OR REPLACE VIEW cannot reorder view columns, so drop first.
+    op.execute(sa.text("DROP VIEW IF EXISTS voucher_posts"))
     op.execute(
         sa.text(
             """
-            CREATE OR REPLACE VIEW voucher_posts AS
+            CREATE VIEW voucher_posts AS
             SELECT
                 p.id,
                 p.source_id,
@@ -112,10 +114,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # CREATE OR REPLACE VIEW cannot reorder view columns, so drop first.
+    op.execute(sa.text("DROP VIEW IF EXISTS voucher_posts"))
     op.execute(
         sa.text(
             """
-            CREATE OR REPLACE VIEW voucher_posts AS
+            CREATE VIEW voucher_posts AS
             SELECT
                 p.id,
                 p.source_id,
