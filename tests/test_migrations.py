@@ -16,7 +16,7 @@ from voucherbot.models.base import Base
 
 _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
 
-_EXPECTED_HEAD = "m6n7o8p9q0r1"
+_EXPECTED_HEAD = "o9p8q7r6s5t4"
 
 # Every model-backed table (views are excluded — voucher_posts is created via
 # migrations as a view, not through Base.metadata.create_all).
