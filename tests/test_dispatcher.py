@@ -213,6 +213,44 @@ async def test_dispatch_tick_marks_failure_on_pipeline_error() -> None:
 
 
 @pytest.mark.asyncio
+async def test_dispatch_tick_disables_unrecoverable_source() -> None:
+    session = AsyncMock()
+    source = _source(id=7, name="rss:gone")
+
+    with (
+        patch(
+            "voucherbot.services.dispatcher._acquire_lease",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
+            "voucherbot.services.dispatcher._pick_due_source",
+            new=AsyncMock(return_value=source),
+        ),
+        patch(
+            "voucherbot.services.dispatcher.run_pipeline_for_source",
+            new=AsyncMock(side_effect=RuntimeError("404 not found")),
+        ),
+        patch(
+            "voucherbot.services.dispatcher._mark_unrecoverable",
+            new=AsyncMock(),
+        ) as mark_unrecoverable,
+        patch(
+            "voucherbot.services.dispatcher._release_lease",
+            new=AsyncMock(),
+        ) as release,
+    ):
+        result = await dispatch_tick(session, {}, "holder-1")
+
+    assert result["status"] == "failed"
+    assert "404 not found" in result["error"]
+    # Regression guard: must pass pre-captured scalars (the ORM instance is
+    # expired after rollback — reading source.id/source.name then would raise
+    # "greenlet_spawn has not been called" under async SQLAlchemy).
+    mark_unrecoverable.assert_awaited_once_with(session, 7, "rss:gone", "404 not found")
+    release.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_mark_success_resets_failures_and_sets_next_due() -> None:
     from voucherbot.services.dispatcher import _mark_success
 

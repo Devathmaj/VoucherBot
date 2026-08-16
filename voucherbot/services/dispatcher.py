@@ -359,9 +359,14 @@ async def dispatch_tick(
             return {"status": "idle"}
 
         start = datetime.now(timezone.utc)
+        # Capture scalar identity BEFORE the pipeline runs: its db.commit() /
+        # any later rollback() expires the ORM instance, and in async SQLAlchemy
+        # reading any attribute (even the id) of an expired object raises
+        # "greenlet_spawn has not been called".
+        source_id = source.id
         source_name = source.name
         failure_source = Source()
-        failure_source.id = source.id
+        failure_source.id = source_id
         failure_source.consecutive_failures = source.consecutive_failures
         failure_source.error_count = source.error_count
         failure_source.avg_runtime_ms = source.avg_runtime_ms
@@ -402,11 +407,11 @@ async def dispatch_tick(
                 pass
             try:
                 if _is_unrecoverable(exc):
-                    # Use pre-captured scalars: after session.rollback() the
+                    # Only captured scalars here: after session.rollback() the
                     # source ORM instance is expired, so reading source.name /
-                    # source.id here would trigger an async lazy-load outside an
+                    # source.id now would trigger an async lazy-load outside an
                     # awaited context ("greenlet_spawn has not been called").
-                    await _mark_unrecoverable(session, source.id, source_name, str(exc))
+                    await _mark_unrecoverable(session, source_id, source_name, str(exc))
                 else:
                     await _mark_failure(session, failure_source, elapsed_ms)
             except DBAPIError:
@@ -419,7 +424,7 @@ async def dispatch_tick(
                     try:
                         if _is_unrecoverable(exc):
                             await _mark_unrecoverable(
-                                fresh, source.id, source_name, str(exc)
+                                fresh, source_id, source_name, str(exc)
                             )
                         else:
                             await _mark_failure(fresh, failure_source, elapsed_ms)
