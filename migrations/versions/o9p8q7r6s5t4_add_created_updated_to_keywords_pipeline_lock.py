@@ -16,6 +16,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy import inspect
 
 revision: str = "o9p8q7r6s5t4"
 down_revision: Union[str, Sequence[str], None] = "m6n7o8p9q0r1"
@@ -24,28 +25,36 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
     for table in ("keywords", "pipeline_lock"):
-        op.add_column(
-            table,
-            sa.Column(
-                "created_at",
-                sa.DateTime(),
-                nullable=False,
-                server_default=sa.func.now(),
-            ),
-        )
-        op.add_column(
-            table,
-            sa.Column(
-                "updated_at",
-                sa.DateTime(),
-                nullable=False,
-                server_default=sa.func.now(),
-            ),
-        )
+        columns = {col["name"] for col in inspect(bind).get_columns(table)}
+        if "created_at" not in columns:
+            op.add_column(
+                table,
+                sa.Column(
+                    "created_at",
+                    sa.DateTime(),
+                    nullable=False,
+                    server_default=sa.func.now(),
+                ),
+            )
+        if "updated_at" not in columns:
+            op.add_column(
+                table,
+                sa.Column(
+                    "updated_at",
+                    sa.DateTime(),
+                    nullable=False,
+                    server_default=sa.func.now(),
+                ),
+            )
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
     for table in ("pipeline_lock", "keywords"):
-        op.drop_column(table, "updated_at")
-        op.drop_column(table, "created_at")
+        columns = {col["name"] for col in inspect(bind).get_columns(table)}
+        if "updated_at" in columns:
+            op.drop_column(table, "updated_at")
+        if "created_at" in columns:
+            op.drop_column(table, "created_at")
