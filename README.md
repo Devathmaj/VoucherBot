@@ -15,6 +15,16 @@
 
 ---
 
+## Big News — No More Setup Required!
+
+We heard your request loud and clear. 🎉
+
+Instead of going through the entire setup and hosting it yourself, you can now **add VoucherBot to your Discord or Telegram** and it will alert you the moment a certification voucher shows up. No code, no deploy, no hassle.
+
+Just head over to **[voucherbot-preview.pages.dev/#notifications](https://voucherbot-preview.pages.dev/#notifications)** to learn all about it and get it set up in minutes.
+
+---
+
 ## Table of Contents
 
 - [Overview](#overview)
@@ -31,9 +41,11 @@
 
 ## Overview
 
-VoucherBot is a program that automatically hunts for certification exam discounts across the internet — so you don't have to. Instead of manually checking dozens of websites, blogs, forums, and communities yourself, VoucherBot does it all in the background, filters out irrelevant results, and emails you whenever it finds a legitimate certification promotion.
+VoucherBot is a program that automatically hunts for certification exam discounts across the internet — so you don't have to. Instead of manually checking dozens of websites, blogs, forums, and communities yourself, VoucherBot does it all in the background, filters out irrelevant results, and alerts you whenever it finds a legitimate certification promotion.
 
-The whole thing runs in the cloud (on a free service called Render), so once it's set up, it runs 24/7 without your computer needing to be on.
+**The easiest way to use VoucherBot** is to add it directly to your **Discord or Telegram** — get notified the instant a voucher drops, no setup at all. See the [Notifications](https://voucherbot-preview.pages.dev/#notifications) page to get started.
+
+Prefer to run it yourself? The whole thing runs in the cloud (on a free service called Render), so once it's set up, it runs 24/7 without your computer needing to be on. That path is covered below.
 
 ---
 
