@@ -403,7 +403,7 @@ async def dispatch_tick(
             try:
                 if _is_unrecoverable(exc):
                     # Use pre-captured scalars: after session.rollback() the
-                    # source ORM instance is expired, so reading source.name / 
+                    # source ORM instance is expired, so reading source.name /
                     # source.id here would trigger an async lazy-load outside an
                     # awaited context ("greenlet_spawn has not been called").
                     await _mark_unrecoverable(session, source.id, source_name, str(exc))
