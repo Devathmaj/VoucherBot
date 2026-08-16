@@ -7,9 +7,9 @@ The public function ``analyze_post`` accepts raw post text and returns a
 canonical ``ExtractedEvent`` (defined in ``voucherbot.services.ai.schema``).
 
 Internally, providers are tried in priority order:
-  1. Groq — each post routed to a model with weighted probability:
-     openai/gpt-oss-20b (40%), openai/gpt-oss-120b (40%),
-     llama-3.3-70b-versatile (20%)
+  1. Groq — each post routed 50/50 across openai/gpt-oss-20b and
+     openai/gpt-oss-120b; low-confidence results are re-analyzed by
+     qwen/qwen3.6-27b (a reasoning model)
   2. Gemini  (final fallback on non-429 failure)
 
 Each adapter is responsible for converting its raw provider response into an
@@ -103,31 +103,53 @@ _SYSTEM_PROMPT = (
 # ---------------------------------------------------------------------------
 _MAX_RETRIES = 3
 _FALLBACK_WAIT_S = 65
-# Weighted Groq routing. Each post is routed to one of these models with the
-# given probability (40% / 40% / 20%). openai/gpt-oss-20b and
-# openai/gpt-oss-120b both carry a 200K token/day quota; llama-3.3-70b-versatile
-# carries a 100K token/day quota.
+# Primary Groq routing. Each post is routed to one of these models with equal
+# weight (50/50) across the two gpt-oss models. qwen/qwen3.6-27b is NOT a
+# primary router: it is a reasoning model reserved for re-analyzing
+# low-confidence results from the gpt-oss pair (see ``_maybe_escalate_to_qwen``).
 _GROQ_MODEL_WEIGHTS: dict[str, float] = {
-    "openai/gpt-oss-20b": 40,
-    "openai/gpt-oss-120b": 40,
-    "llama-3.3-70b-versatile": 20,
+    "openai/gpt-oss-20b": 0.5,
+    "openai/gpt-oss-120b": 0.5,
 }
 _GROQ_BATCH_MODELS: list[str] = list(_GROQ_MODEL_WEIGHTS.keys())
+
+# Reasoning model used to re-analyze low-confidence primary results. Kept out of
+# ``_GROQ_BATCH_MODELS`` so daily-exhaustion and budget accounting treat it as
+# the escalation tier rather than a primary router.
+_GROQ_REASONER_MODEL = "qwen/qwen3.6-27b"
+
+# Primary results below this confidence trigger a qwen re-analysis.
+_GROQ_LOW_CONFIDENCE_THRESHOLD = 0.6
 
 _GROQ_MODEL_TPM = {
     "openai/gpt-oss-120b": 8000,
     "openai/gpt-oss-20b": 8000,
-    "llama-3.3-70b-versatile": 12000,
+    "qwen/qwen3.6-27b": 8000,
 }
 _GROQ_MODEL_TPD = {
     "openai/gpt-oss-120b": 200_000,
     "openai/gpt-oss-20b": 200_000,
-    "llama-3.3-70b-versatile": 100_000,
+    "qwen/qwen3.6-27b": 200_000,
 }
 _GROQ_MODEL_RPD = {
     "openai/gpt-oss-120b": 1_000,
     "openai/gpt-oss-20b": 1_000,
-    "llama-3.3-70b-versatile": 1_000,
+    "qwen/qwen3.6-27b": 1_000,
+}
+
+# Per-model tuning overrides.  Reasoning models burn completion tokens on
+# "thinking", so the default 1024 budget easily truncates the answer and the
+# server-side JSON validator then rejects it (400 `failed_generation`).
+# Qwen3.6 27B also performs best around temperature 0.6 (Groq docs).
+_GROQ_MODEL_PARAMS = {
+    "qwen/qwen3.6-27b": {
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "max_completion_tokens": 2048,
+        "reasoning_effort": "default",
+        "reasoning_format": "hidden",
+        "response_format": {"type": "json_object"},
+    },
 }
 
 # Global cap: max concurrent AI calls across all models combined.
@@ -371,10 +393,9 @@ async def _call_groq_model(
                 "max_completion_tokens": settings.groq_max_completion_tokens,
                 "top_p": 1,
             }
+            params.update(_GROQ_MODEL_PARAMS.get(model, {}))
             if model.startswith("openai/gpt-oss-"):
                 params["reasoning_effort"] = "medium"
-            if "llama" in model.lower():
-                params["response_format"] = {"type": "json_object"}
 
             resp = await client.chat.completions.create(**params)  # type: ignore[call-overload]
             actual = getattr(resp.usage, "total_tokens", None) or estimated_tokens
@@ -418,10 +439,11 @@ async def _call_groq_model(
 async def _call_groq(
     title: str, content: str | None, source_name: str | None = None
 ) -> ExtractedEvent | None:
-    """Try Groq models weighted 40/40/20, skipping daily-exhausted ones.
+    """Try Groq models weighted 50/50, skipping daily-exhausted ones.
 
     The first pick follows ``_GROQ_MODEL_WEIGHTS``; on failure the remaining
-    available models are tried as fallback.
+    available models are tried as fallback.  A low-confidence result from the
+    gpt-oss pair is then re-analyzed by the qwen reasoning model.
     """
     tried: set[str] = set()
     while True:
@@ -431,7 +453,44 @@ async def _call_groq(
         tried.add(model)
         result = await _call_groq_model(title, content, model, source_name)
         if result is not None:
-            return result
+            return await _maybe_escalate_to_qwen(title, content, result, source_name)
+
+
+async def _maybe_escalate_to_qwen(
+    title: str,
+    content: str | None,
+    result: ExtractedEvent,
+    source_name: str | None = None,
+) -> ExtractedEvent:
+    """Re-analyze a low-confidence result with the qwen reasoning model.
+
+    Only primary gpt-oss results with confidence below
+    ``_GROQ_LOW_CONFIDENCE_THRESHOLD`` are escalated.  The call is
+    best-effort: if qwen is unavailable or fails, the original result is
+    returned unchanged so a lower-quality answer never replaces a valid one.
+    """
+    if (
+        _GROQ_LOW_CONFIDENCE_THRESHOLD is None
+        or result.confidence >= _GROQ_LOW_CONFIDENCE_THRESHOLD
+    ):
+        return result
+    if not is_model_available(_GROQ_REASONER_MODEL):
+        logger.info(
+            "ai.analyzer: qwen reasoning model unavailable, keeping primary result",
+            model=_GROQ_REASONER_MODEL,
+            confidence=result.confidence,
+        )
+        return result
+
+    logger.info(
+        "ai.analyzer: escalating low-confidence result to qwen",
+        model=_GROQ_REASONER_MODEL,
+        confidence=result.confidence,
+    )
+    refined = await _call_groq_model(title, content, _GROQ_REASONER_MODEL, source_name)
+    if refined is None:
+        return result
+    return refined
 
 
 async def _call_gemini(
@@ -485,7 +544,7 @@ async def analyze_post(
 ) -> ExtractedEvent | None:
     """Extract structured promotion data from a single post.
 
-    Provider priority: Groq (primary, weighted 40/40/20) → Gemini (final fallback).
+    Provider priority: Groq (primary, weighted 50/50) → Gemini (final fallback).
     Fallback is triggered only on non-429 failures; 429s are retried within each provider.
     """
     if settings.groq_api_key:
@@ -512,9 +571,10 @@ async def analyze_post_batch(
 ) -> list[ExtractedEvent | None]:
     """Analyze multiple posts concurrently, distributing across available Groq models.
 
-    Each post is assigned a Groq model weighted 40/40/20 per
-    ``_GROQ_MODEL_WEIGHTS``; on per-model failure the remaining available
-    models are tried, then Gemini as final fallback.
+    Each post is assigned a Groq model weighted 50/50 across the gpt-oss pair
+    per ``_GROQ_MODEL_WEIGHTS``; on per-model failure the remaining available
+    models are tried.  Low-confidence primary results are re-analyzed by the
+    qwen reasoning model, then Gemini is used as the final fallback.
     Returns results in the same order as the input list.
     """
     if not settings.groq_api_key or not posts:
@@ -538,7 +598,9 @@ async def analyze_post_batch(
                 tried.add(model)
                 result = await _call_groq_model(title, content, model, source_name)
                 if result is not None:
-                    return idx, result
+                    return idx, await _maybe_escalate_to_qwen(
+                        title, content, result, source_name
+                    )
             if settings.gemini_api_key:
                 return idx, await _call_gemini(title, content, source_name)
         return idx, None
