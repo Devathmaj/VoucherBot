@@ -278,13 +278,14 @@ async def _mark_failure(
 
 async def _mark_unrecoverable(
     session: AsyncSession,
-    source: Source,
+    source_id: int,
+    source_name: str,
     error: str,
 ) -> None:
     """Disable a source permanently after an unrecoverable error."""
     logger.warning(
         "dispatcher: disabling source — unrecoverable error",
-        source=source.name,
+        source=source_name,
         error=error[:120],
     )
     await session.execute(
@@ -296,7 +297,7 @@ async def _mark_unrecoverable(
             WHERE id = :source_id
             """
         ),
-        {"source_id": source.id},
+        {"source_id": source_id},
     )
     await session.commit()
 
@@ -401,7 +402,11 @@ async def dispatch_tick(
                 pass
             try:
                 if _is_unrecoverable(exc):
-                    await _mark_unrecoverable(session, source, str(exc))
+                    # Use pre-captured scalars: after session.rollback() the
+                    # source ORM instance is expired, so reading source.name / 
+                    # source.id here would trigger an async lazy-load outside an
+                    # awaited context ("greenlet_spawn has not been called").
+                    await _mark_unrecoverable(session, source.id, source_name, str(exc))
                 else:
                     await _mark_failure(session, failure_source, elapsed_ms)
             except DBAPIError:
@@ -413,7 +418,9 @@ async def dispatch_tick(
                 async with session_scope() as fresh:
                     try:
                         if _is_unrecoverable(exc):
-                            await _mark_unrecoverable(fresh, source, str(exc))
+                            await _mark_unrecoverable(
+                                fresh, source.id, source_name, str(exc)
+                            )
                         else:
                             await _mark_failure(fresh, failure_source, elapsed_ms)
                     except Exception as inner:
