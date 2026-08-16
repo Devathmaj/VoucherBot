@@ -34,7 +34,6 @@ def _extracted() -> ExtractedEvent:
         voucher_code="MS-LEARN-50",
         discount="50%",
         promotion_type="voucher",
-        registrations=None,
         certifications=["AZ-900"],
         regions=["US"],
         start_date="2026-09-01",
@@ -93,28 +92,27 @@ def test_build_voucher_payload_claim_url_falls_back_to_post() -> None:
 
 
 @pytest.mark.asyncio
-async def test_send_skips_when_not_configured(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(notifier.settings, "notification_bot_server_url", None)
-    result = await notifier.send_bot_notification(_post(), _extracted())
+async def test_send_skips_when_not_configured() -> None:
+    with patch(
+        "voucherbot.services.bot_notification.notifier.settings",
+        _settings(notification_bot_server_url=None),
+    ):
+        result = await notifier.send_bot_notification(_post(), _extracted())
     assert result is False
 
 
 @pytest.mark.asyncio
-async def test_send_skips_when_secret_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(notifier.settings, "webhook_secret", None)
-    result = await notifier.send_bot_notification(_post(), _extracted())
+async def test_send_skips_when_secret_missing() -> None:
+    with patch(
+        "voucherbot.services.bot_notification.notifier.settings",
+        _settings(webhook_secret=None),
+    ):
+        result = await notifier.send_bot_notification(_post(), _extracted())
     assert result is False
 
 
 @pytest.mark.asyncio
-async def test_send_posts_with_auth_header(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        notifier.settings,
-        "notification_bot_server_url",
-        "https://bot.example.com/webhook",
-    )
-    monkeypatch.setattr(notifier.settings, "webhook_secret", "super-secret")
-
+async def test_send_posts_with_auth_header() -> None:
     class FakeResponse:
         status_code = 200
         raise_for_status = lambda self: None  # noqa: E731
@@ -139,7 +137,16 @@ async def test_send_posts_with_auth_header(monkeypatch: pytest.MonkeyPatch) -> N
             captured["headers"] = headers
             return FakeResponse()
 
-    with patch.object(notifier.httpx, "AsyncClient", FakeClient):
+    with (
+        patch(
+            "voucherbot.services.bot_notification.notifier.settings",
+            _settings(),
+        ),
+        patch(
+            "voucherbot.services.bot_notification.notifier.httpx.AsyncClient",
+            FakeClient,
+        ),
+    ):
         result = await notifier.send_bot_notification(_post(), _extracted())
 
     assert result is True
@@ -153,9 +160,7 @@ async def test_send_posts_with_auth_header(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 @pytest.mark.asyncio
-async def test_send_returns_false_on_http_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_send_returns_false_on_http_error() -> None:
     async def _fail_post(*args: Any, **kwargs: Any) -> None:
         raise httpx.HTTPStatusError(
             "500",
@@ -175,7 +180,16 @@ async def test_send_returns_false_on_http_error(
 
         post = _fail_post
 
-    with patch.object(notifier.httpx, "AsyncClient", FakeClient):
+    with (
+        patch(
+            "voucherbot.services.bot_notification.notifier.settings",
+            _settings(),
+        ),
+        patch(
+            "voucherbot.services.bot_notification.notifier.httpx.AsyncClient",
+            FakeClient,
+        ),
+    ):
         result = await notifier.send_bot_notification(_post(), _extracted())
 
     assert result is False
