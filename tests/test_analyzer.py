@@ -166,22 +166,14 @@ class TestPickGroqModel:
         population = list(choices.call_args.args[0])
         weights = list(choices.call_args.kwargs["weights"])
         assert population == analyzer._GROQ_BATCH_MODELS
-        assert weights == [40, 40, 20]
+        assert set(weights) == {0.5}
+        assert "qwen/qwen3.6-27b" not in population
 
     def test_skips_exhausted_models_when_picking(self) -> None:
-        _exhaust_daily("llama-3.3-70b-versatile")
-        with patch(
-            "voucherbot.services.ai.analyzer.random.choices",
-            return_value=["openai/gpt-oss-20b"],
-        ) as choices:
-            picked = analyzer._pick_groq_model()
+        _exhaust_daily("openai/gpt-oss-20b")
+        picked = analyzer._pick_groq_model()
 
-        assert picked is not None
-        population = list(choices.call_args.args[0])
-        assert "llama-3.3-70b-versatile" not in population
-        assert "llama-3.3-70b-versatile" not in list(
-            choices.call_args.kwargs["weights"]
-        )
+        assert picked == "openai/gpt-oss-120b"
 
 
 def _exhaust_daily(model: str) -> None:
@@ -265,6 +257,32 @@ async def test_call_groq_model_returns_parsed_event() -> None:
     settle_call = settle.await_args
     assert settle_call is not None
     assert settle_call.args[0] == 1
+
+
+@pytest.mark.asyncio
+async def test_call_groq_model_sets_qwen_params() -> None:
+    client = _fake_groq_client([_groq_response()])
+    with (
+        patch("voucherbot.services.ai.analyzer.settings", _settings()),
+        patch("voucherbot.services.ai.analyzer.AsyncGroq", return_value=client),
+        patch(
+            "voucherbot.services.ai.analyzer._wait_for_groq_budget",
+            new=AsyncMock(return_value=1),
+        ),
+        patch("voucherbot.services.ai.analyzer._settle_groq_budget", new=AsyncMock()),
+    ):
+        result = await analyzer._call_groq_model("Title", "Content", "qwen/qwen3.6-27b")
+
+    assert result is not None
+    call = client.chat.completions.create.await_args
+    assert call is not None
+    params = call.kwargs
+    assert params["reasoning_effort"] == "default"
+    assert params["reasoning_format"] == "hidden"
+    assert params["response_format"] == {"type": "json_object"}
+    assert params["temperature"] == 0.6
+    assert params["top_p"] == 0.95
+    assert params["max_completion_tokens"] == 2048
 
 
 @pytest.mark.asyncio
@@ -427,6 +445,83 @@ async def test_call_groq_returns_none_when_all_models_fail() -> None:
         result = await analyzer._call_groq("Title", "Content")
 
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _maybe_escalate_to_qwen
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_escalate_routes_low_confidence_to_qwen() -> None:
+    primary = ExtractedEvent(is_voucher=True, confidence=0.4)
+    refined = ExtractedEvent(is_voucher=True, confidence=0.9, reason="refined")
+    with (
+        patch(
+            "voucherbot.services.ai.analyzer.is_model_available",
+            side_effect=lambda model: True,
+        ),
+        patch(
+            "voucherbot.services.ai.analyzer._call_groq_model",
+            new=AsyncMock(return_value=refined),
+        ) as call_model,
+    ):
+        result = await analyzer._maybe_escalate_to_qwen("Title", "Content", primary)
+
+    assert result is refined
+    call = call_model.await_args
+    assert call is not None
+    assert call.args[2] == analyzer._GROQ_REASONER_MODEL
+
+
+@pytest.mark.asyncio
+async def test_escalate_keeps_high_confidence_result() -> None:
+    primary = ExtractedEvent(is_voucher=True, confidence=0.9)
+    with patch(
+        "voucherbot.services.ai.analyzer._call_groq_model",
+        new=AsyncMock(),
+    ) as call_model:
+        result = await analyzer._maybe_escalate_to_qwen("Title", "Content", primary)
+
+    assert result is primary
+    call_model.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_escalate_keeps_original_when_qwen_unavailable() -> None:
+    primary = ExtractedEvent(is_voucher=True, confidence=0.4)
+    with (
+        patch(
+            "voucherbot.services.ai.analyzer.is_model_available",
+            side_effect=lambda model: False,
+        ),
+        patch(
+            "voucherbot.services.ai.analyzer._call_groq_model",
+            new=AsyncMock(),
+        ) as call_model,
+    ):
+        result = await analyzer._maybe_escalate_to_qwen("Title", "Content", primary)
+
+    assert result is primary
+    call_model.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_escalate_keeps_original_when_qwen_fails() -> None:
+    primary = ExtractedEvent(is_voucher=True, confidence=0.4)
+    with (
+        patch(
+            "voucherbot.services.ai.analyzer.is_model_available",
+            side_effect=lambda model: True,
+        ),
+        patch(
+            "voucherbot.services.ai.analyzer._call_groq_model",
+            new=AsyncMock(return_value=None),
+        ),
+    ):
+        result = await analyzer._maybe_escalate_to_qwen("Title", "Content", primary)
+
+    assert result is primary
 
 
 # ---------------------------------------------------------------------------

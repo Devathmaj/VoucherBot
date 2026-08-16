@@ -323,6 +323,10 @@ async def test_process_one_source_new_voucher_full_pipeline() -> None:
             "voucherbot.services.ingestion.pipeline.deliver_pending_notifications",
             new=AsyncMock(return_value=1),
         ) as deliver,
+        patch(
+            "voucherbot.services.ingestion.pipeline.send_bot_notification",
+            new=AsyncMock(return_value=True),
+        ) as bot_notify,
     ):
         stats = await pipeline._process_one_source(db, source, collector, keywords, 10)
 
@@ -332,11 +336,13 @@ async def test_process_one_source_new_voucher_full_pipeline() -> None:
     assert stats["ai_analyzed"] == 1
     assert stats["events_created"] == 1
     assert stats["notified"] == 1
+    assert stats["bot_notified"] == 1
     assert db_post.ai_result == extracted.model_dump()
     assert db_post.status == PostStatus.PROCESSED
     assert source.error_count == 0
     db.commit.assert_awaited()
     deliver.assert_awaited_once()
+    bot_notify.assert_awaited_once()
 
 
 @pytest.mark.asyncio

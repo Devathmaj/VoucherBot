@@ -23,6 +23,13 @@ These values are loaded from `.env` through Pydantic settings.
 | `EMAIL_ID` | `None` | Recipient address for voucher notifications |
 | `EMAIL_MIN_INTERVAL_SECONDS` | `5.0` | Minimum delay between email sends |
 
+### Bot webhook notification
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `NOTIFICATION_BOT_SERVER_URL` | `None` | Endpoint that receives a POST with the same voucher alert data as the email, for a remote bot server |
+| `WEBHOOK_SECRET` | `None` | Secret sent in the `Authorization` header of the webhook POST |
+
 ### Reddit ingestion
 
 | Variable | Default | Purpose |

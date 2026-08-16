@@ -84,6 +84,12 @@ class Settings(BaseSettings):
     # Optional per-email Reply-To; when unset Resend falls back to the From.
     email_reply_to: Optional[str] = None
 
+    # Bot webhook notification (Discord-style bot server)
+    # Endpoint that receives a POST with the same voucher data as the email
+    # alert; protected by WEBHOOK_SECRET in the Authorization header.
+    notification_bot_server_url: Optional[str] = None
+    webhook_secret: Optional[str] = None
+
     # Reddit
     reddit_client_id: Optional[str] = None
     reddit_client_secret: Optional[str] = None
