@@ -23,6 +23,8 @@ Instead of going through the entire setup and hosting it yourself, you can now *
 
 Just head over to **[voucherbot-preview.pages.dev/#notifications](https://voucherbot-preview.pages.dev/#notifications)** to learn all about it and get it set up in minutes.
 
+The code for the Discord and Telegram bots lives in the separate [Notification-Bot](https://github.com/Devathmaj/Notification-Bot) repository, feel free to check it out.
+
 ---
 
 ## Table of Contents
