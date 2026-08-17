@@ -6,7 +6,7 @@
 
 *Continuously monitors community and official sources for certification discounts, free exam opportunities, beta exams, and promotional campaigns.*
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/License-see%20LICENSE-lightgrey)
 ![Deploy](https://img.shields.io/badge/Deploy-Render-46E3B7?logo=render&logoColor=white)
 ![Status](https://img.shields.io/badge/status-active-success)

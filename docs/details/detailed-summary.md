@@ -37,11 +37,7 @@ This flow is shared by every source type. The pipeline is deliberately provider-
 ```text
 FastAPI process (uvicorn)
 ├─ REST API
-│  ├─ /health
-│  ├─ /ready
-│  ├─ /sources
-│  ├─ /posts
-│  └─ /alerts
+│  └─ /health (rate-limited liveness + DB probe)
 └─ Background scheduler
    └─ sweep → dispatch_tick → pipeline → sleep
 
@@ -70,6 +66,8 @@ voucherbot/
 │   ├── post.py
 │   ├── event.py
 │   ├── keyword.py
+│   ├── vendor_mapping.py
+│   ├── notification.py
 │   └── pipeline_lock.py
 ├── providers/
 │   ├── base.py
@@ -78,25 +76,31 @@ voucherbot/
 │   ├── reddit/
 │   │   ├── client.py
 │   │   └── collector.py
-│   └── website/collector.py
+│   ├── website/collector.py
+│   ├── pearsonvue/collector.py
+│   └── training_provider/collector.py
 ├── services/
 │   ├── scheduler.py
 │   ├── dispatcher.py
+│   ├── event_consolidation.py
+│   ├── retention.py
 │   ├── ingestion/
 │   │   ├── pipeline.py
 │   │   ├── dedup.py
 │   │   └── event_matcher.py
 │   ├── ai/
 │   │   ├── analyzer.py
+│   │   ├── event_matcher_ai.py
 │   │   └── schema.py
-│   └── email/
-│       ├── sender.py
-│       └── notifications.py
-└── api/routers/
-    ├── health.py
-    ├── sources.py
-    ├── posts.py
-    └── alerts.py
+│   ├── email/
+│   │   ├── sender.py
+│   │   └── notifications.py
+│   └── bot_notification/
+│       └── notifier.py
+└── api/
+    ├── rate_limit.py
+    └── routers/
+        └── health.py
 ```
 
 ---
@@ -125,6 +129,7 @@ Each sweep calls `dispatch_tick` repeatedly until it returns `idle`. The loop is
 A source is eligible when:
 
 - `enabled = true`
+- config is not marked `unsupported`
 - `next_due_at IS NULL OR next_due_at <= now()`
 - `backoff_until IS NULL OR backoff_until <= now()`
 - Reddit sources are excluded when `reddit_ingestion_enabled = false`
@@ -242,7 +247,7 @@ The result is one of `AUTO_MERGED`, `POSSIBLE_MATCH`, or `NEW`.
 
 ### Stage 5 — Email notification
 
-If the AI extraction yields a voucher candidate and the event decision is not `AUTO_MERGED`, the notification service sends an email through Resend. The post is marked `is_notified` only after the send succeeds.
+If the AI extraction yields a voucher candidate and the event decision is not `AUTO_MERGED`, the pipeline stages a delivery intent into the transactional outbox (`notification_outbox`) before the final commit. The scheduler then delivers PENDING rows through Resend with a stable idempotency key; the post is marked `is_notified` only after the send succeeds. The same payload is POSTed to the optional bot server webhook alongside the email.
 
 ---
 
@@ -270,6 +275,16 @@ All collectors implement a common contract around normalized posts.
 - can extract structured notes from curated voucher pages,
 - skips sources that are blocked by policy.
 
+### Pearson VUE collector
+
+- scrapes official vendor pages (AWS, Microsoft, Cisco, CompTIA, etc.) for exam promotions,
+- extracts slide/promo/card content with per-vendor heuristics.
+
+### Training provider collector
+
+- scrapes training partner promotion pages (Global Knowledge, Ascendient, etc.),
+- supports per-vendor extractors and generic card/heading fallbacks.
+
 ### HTTP policy
 
 All HTTP traffic goes through a polite request layer that checks `robots.txt`, enforces crawl delays, and uses an identifying user-agent. This keeps the service aligned with site policies while still allowing broad ingestion.
@@ -282,7 +297,8 @@ The AI analyzer uses a provider chain anchored around Groq and Gemini.
 
 ### Provider chain
 
-- Groq models are tried first,
+- Groq models are tried first — each post is routed 50/50 across `openai/gpt-oss-20b` and `openai/gpt-oss-120b`,
+- low-confidence primary results are re-analyzed by the qwen reasoning model (`qwen/qwen3.6-27b`),
 - the first successful response wins,
 - Gemini is used as the final fallback,
 - retries are applied for rate-limit errors,
@@ -304,7 +320,7 @@ Per-model rate limiting tracks requests and token budgets. The system also uses 
 |---|---|---|
 | id | integer PK | |
 | name | string UNIQUE | |
-| type | enum | REDDIT, RSS, BLOG, EVENT, FORUM, WEBSITE, API |
+| type | enum | REDDIT, RSS, BLOG, EVENT, FORUM, WEBSITE, API, PEARSONVUE, TRAINING_PROVIDER |
 | base_url | string | |
 | enabled | boolean | false skips the scheduler |
 | priority | integer | higher processed first within tier |
@@ -330,7 +346,7 @@ Per-model rate limiting tracks requests and token budgets. The system also uses 
 | summary | text | optional short description |
 | author | string | |
 | published_at | timestamptz | |
-| status | enum | QUEUED / FILTERED / PROCESSED |
+| status | enum | NEW / FILTERED / QUEUED / PROCESSING / PROCESSED / NOTIFIED / FAILED |
 | score | integer | keyword score |
 | raw_data | JSONB | original collection payload |
 | vendor | string (nullable) | resolved from vendor_mappings table |
@@ -381,9 +397,24 @@ URL patterns are checked first (startswith match against post URL), then source 
 | Column | Type | Notes |
 |---|---|---|
 | id | integer PK | |
-| url_pattern | string (nullable) | base URL prefix for startswith matching |
+| url_pattern | string (nullable, unique) | base URL prefix for startswith matching |
 | source_name_pattern | string (nullable, unique) | lowercase substring pattern for source name |
 | vendor | string (not null) | canonical vendor name (e.g. "aws", "microsoft") |
+
+### notification_outbox
+
+Transactional outbox for voucher alert emails. Delivery intent is persisted in the same transaction as the pipeline; a background sweep retries PENDING rows until SENT using a stable `idempotency_key` so replays cannot duplicate emails.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | integer PK | |
+| post_id | integer FK | linked post |
+| idempotency_key | string UNIQUE | stable per (post, content) |
+| status | enum | PENDING / SENT / FAILED |
+| attempts | integer | delivery attempt counter |
+| last_error | string | last failure reason |
+| last_attempt_at / sent_at | timestamptz | delivery timing |
+| subject / html_body / text_body | string/text | rendered email snapshot |
 
 ### voucher_posts view
 
@@ -393,21 +424,17 @@ This read-only view exposes AI-confirmed vouchers for the alerts API. It flatten
 
 ## REST API
 
-All routes are read-only. No authentication is implemented.
+The API is intentionally minimal and read-only, with a single rate-limited health endpoint:
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/health` | Returns service status |
-| GET | `/ready` | Executes `SELECT 1` and reports DB reachability |
-| GET | `/sources` | Lists sources, optionally filtered by type or enabled state |
-| GET | `/posts` | Lists posts, optionally filtered by status, source type, and minimum score |
-| GET | `/alerts` | Lists AI-confirmed voucher candidates from the `voucher_posts` view |
+| GET | `/health` | Returns service status and checks DB reachability via `SELECT count(*) FROM sources` |
 
 ---
 
 ## Email notifications
 
-The notification layer uses Resend and sends both HTML and plain-text emails containing voucher details such as vendor, promotion name, certification list, discount, voucher code, registration URL, and dates. A post is marked as notified only after the provider confirms acceptance.
+The notification layer uses Resend and sends both HTML and plain-text emails containing voucher details such as vendor, promotion name, certification list, discount, voucher code, registration URL, and dates. Delivery is staged through a transactional outbox (`notification_outbox`) in the same transaction as the pipeline run, then delivered by the scheduler with a stable idempotency key so retries can never duplicate an email. The post is marked `is_notified` only after the provider confirms acceptance. The same voucher payload is also POSTed to an optional bot server webhook (`NOTIFICATION_BOT_SERVER_URL`).
 
 ---
 
@@ -431,11 +458,15 @@ All settings are loaded from `.env` through `pydantic-settings`.
 |---|---|---|
 | `DATABASE_URL` | required | Asyncpg connection string |
 | `IS_PROD` | `false` | Skip DB init/bootstrap on startup |
+| `IS_TEST` | `false` | Seed a localhost test source for end-to-end pipeline testing |
 | `LOG_LEVEL` | `INFO` | Logging level |
 | `RESEND_API_KEY` | — | Email sending |
 | `EMAIL_FROM` | `VoucherBot <onboarding@resend.dev>` | Sender address |
 | `EMAIL_ID` | — | Recipient address for alerts |
+| `EMAIL_REPLY_TO` | — | Optional per-email Reply-To |
 | `EMAIL_MIN_INTERVAL_SECONDS` | `5.0` | Throttle between sends |
+| `NOTIFICATION_BOT_SERVER_URL` | — | Webhook endpoint that receives the same voucher alert data |
+| `WEBHOOK_SECRET` | — | Secret sent in the `Authorization` header of the webhook POST |
 | `REDDIT_CLIENT_ID` | — | Reddit API credentials |
 | `REDDIT_CLIENT_SECRET` | — | Reddit API credentials |
 | `REDDIT_USER_AGENT` | — | Reddit API credentials |
@@ -449,9 +480,11 @@ All settings are loaded from `.env` through `pydantic-settings`.
 | `SCRAPER_RESPECT_ROBOTS` | `true` | Obey robots.txt |
 | `SCRAPER_MIN_DELAY_SECONDS` | `2.0` | Minimum per-host crawl delay |
 | `SCRAPER_USER_AGENT` | — | Override default UA string |
+| `HEALTH_RATE_LIMIT_PER_MINUTE` | `60` | /health requests per IP per minute (0 disables) |
 | `TICK_LEASE_TTL_SECONDS` | `21600` | Pipeline lease TTL |
 | `SOURCE_BACKOFF_BASE_MINUTES` | `5` | Backoff base for failures |
 | `SOURCE_BACKOFF_MAX_MINUTES` | `360` | Backoff ceiling |
+| `CONTENT_RETENTION_DAYS` | `7` | Posts older than this are content-purged on each sweep |
 
 ---
 

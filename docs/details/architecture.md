@@ -11,7 +11,7 @@ VoucherBot is an async Python service that monitors certification-related source
 The application entry point is [voucherbot/main.py](../../voucherbot/main.py). During startup it:
 
 1. configures logging,
-2. creates tables and seeds source/keyword data when `IS_PROD=false`,
+2. applies Alembic migrations and seeds source/keyword data when `IS_PROD=false`,
 3. resets all sources to be due again, and
 4. starts the scheduler task.
 
@@ -47,7 +47,8 @@ The main implementation areas are:
 - [voucherbot/services/ingestion/event_matcher.py](../../voucherbot/services/ingestion/event_matcher.py) — canonical event matching and field merging
 - [voucherbot/services/event_consolidation.py](../../voucherbot/services/event_consolidation.py) — periodic merge of duplicate canonical events
 - [voucherbot/services/ai/analyzer.py](../../voucherbot/services/ai/analyzer.py) — AI extraction provider chain and batching
-- [voucherbot/api/routers](../../voucherbot/api/routers) — read-only HTTP endpoints for sources, posts, alerts, and health
+- [voucherbot/services/ai/event_matcher_ai.py](../../voucherbot/services/ai/event_matcher_ai.py) — qwen-based same-promotion judge
+- [voucherbot/api/routers/health.py](../../voucherbot/api/routers/health.py) — read-only health endpoint with rate limiting
 
 ## Scheduler and dispatcher
 
@@ -113,7 +114,7 @@ The result is one of `AUTO_MERGED`, `POSSIBLE_MATCH`, or `NEW`, and the matcher 
 
 ### 6. Email notification
 
-If the AI extraction yields a voucher candidate and the event decision is not `AUTO_MERGED`, the notification service sends an email through Resend. The post is marked `is_notified` only after the send succeeds.
+If the AI extraction yields a voucher candidate and the event decision is not `AUTO_MERGED`, delivery intent is staged into the transactional notification outbox in the same commit as the pipeline. Delivery is attempted immediately through Resend with a stable idempotency key; failures stay `PENDING` and are retried by the scheduler. The post is marked `is_notified` only after a send succeeds. The same payload is POSTed to the optional bot server webhook alongside the email (best-effort — a webhook failure never fails the pipeline).
 
 ## Event consolidation
 
@@ -134,6 +135,8 @@ The core SQLAlchemy models are:
 - [voucherbot/models/post.py](../../voucherbot/models/post.py) — `Post`, `PostStatus`, `VoucherPost`
 - [voucherbot/models/event.py](../../voucherbot/models/event.py) — `Event`, `EventStatus`, `MatchConfidence`
 - [voucherbot/models/keyword.py](../../voucherbot/models/keyword.py) — keyword scoring rows used by the pipeline
+- [voucherbot/models/vendor_mapping.py](../../voucherbot/models/vendor_mapping.py) — URL/source-name pattern → vendor lookup
+- [voucherbot/models/notification.py](../../voucherbot/models/notification.py) — notification outbox for voucher alert emails
 - [voucherbot/models/pipeline_lock.py](../../voucherbot/models/pipeline_lock.py) — pipeline lease row used by the dispatcher
 
 The important relationships are:
@@ -144,13 +147,9 @@ The important relationships are:
 
 ## API surface
 
-The FastAPI routes are intentionally read-only and do not implement authentication:
+The FastAPI app exposes a single read-only endpoint and does not implement authentication:
 
-- `GET /health` — simple liveness endpoint
-- `GET /ready` — DB reachability probe
-- `GET /sources` — list sources with optional filters by type or enabled state
-- `GET /posts` — list posts with optional filters by status, source type, and minimum score
-- `GET /alerts` — list AI-confirmed voucher candidates from the `voucher_posts` view
+- `GET /health` — liveness + DB reachability probe (rate-limited per IP)
 
 ## Configuration and deployment
 

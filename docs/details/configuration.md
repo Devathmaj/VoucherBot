@@ -12,6 +12,7 @@ These values are loaded from `.env` through Pydantic settings.
 |---|---:|---|
 | `DATABASE_URL` | required | Async SQLAlchemy connection string for PostgreSQL |
 | `IS_PROD` | `false` | When `true`, startup skips schema/bootstrap work and assumes the database is already prepared |
+| `IS_TEST` | `false` | When `true`, seeds a `website:local_test` source pointing at `http://localhost:35926/` for end-to-end pipeline testing |
 | `LOG_LEVEL` | `INFO` | Logging level used by the application |
 
 ### Email
@@ -21,7 +22,15 @@ These values are loaded from `.env` through Pydantic settings.
 | `RESEND_API_KEY` | `None` | API key for Resend-based email delivery |
 | `EMAIL_FROM` | `VoucherBot <onboarding@resend.dev>` | Sender address used for alerts |
 | `EMAIL_ID` | `None` | Recipient address for voucher notifications |
+| `EMAIL_REPLY_TO` | `None` | Optional per-email Reply-To; when unset Resend falls back to the From address |
 | `EMAIL_MIN_INTERVAL_SECONDS` | `5.0` | Minimum delay between email sends |
+
+### API rate limiting
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `HEALTH_RATE_LIMIT_PER_MINUTE` | `60` | Max `/health` requests per IP per minute; `0` disables the limit |
+| `RATE_LIMIT_TRUSTED_PROXIES` | `[]` | Comma-separated proxy IPs whose `X-Forwarded-For` values are trusted for rate limiting |
 
 ### Bot webhook notification
 
@@ -59,6 +68,7 @@ These values are loaded from `.env` through Pydantic settings.
 | `TICK_JOB_TIMEOUT_SECONDS` | `None` | Optional timeout for scheduler jobs |
 | `SOURCE_BACKOFF_BASE_MINUTES` | `5` | Base delay used for recoverable source failures |
 | `SOURCE_BACKOFF_MAX_MINUTES` | `360` | Maximum backoff delay for a source |
+| `CONTENT_RETENTION_DAYS` | `7` | Posts older than this are content-purged each scheduler sweep |
 
 ### AI providers
 
@@ -119,12 +129,14 @@ The sweep runs after each scheduler sweep, groups active events by normalised re
 The `SOURCE_PRIORITY` list defines how source types are ranked when merging event fields:
 
 1. `WEBSITE`
-2. `EVENT`
-3. `BLOG`
-4. `RSS`
-5. `FORUM`
-6. `REDDIT`
-7. `API`
+2. `PEARSONVUE`
+3. `TRAINING_PROVIDER`
+4. `EVENT`
+5. `BLOG`
+6. `RSS`
+7. `FORUM`
+8. `REDDIT`
+9. `API`
 
 Higher-priority sources overwrite lower-priority values when a new post updates an existing event.
 

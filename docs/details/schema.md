@@ -1,6 +1,6 @@
 # Database schema
 
-**Current revision:** `j0k1l2m3n4o5`  
+**Current revision:** `o9p8q7r6s5t4`  
 Apply with: `alembic upgrade head`
 
 ## Objects
@@ -13,12 +13,16 @@ Apply with: `alembic upgrade head`
 | `keywords` | table | Keyword scoring catalog |
 | `vendor_mappings` | table | URL/source-name pattern → vendor lookup |
 | `pipeline_lock` | table | Dispatcher lease |
+| `notification_outbox` | table | Transactional outbox for voucher alert emails |
 | `alembic_version` | table | Migration pointer |
 | `voucher_posts` | **view** | AI-confirmed vouchers only (`is_voucher` + `PROCESSED`) |
 
 ## Enums
 
-- `sourcetype`, `poststatus`, `eventstatus`
+- `sourcetype` (includes `PEARSONVUE`, `TRAINING_PROVIDER`)
+- `poststatus`
+- `eventstatus`
+- `notificationstatus`
 
 ## Prod rule
 
