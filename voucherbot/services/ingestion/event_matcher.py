@@ -5,8 +5,9 @@ Given an ``ExtractedEvent`` produced by the AI analyzer, the ``EventMatcher``
 determines whether the data describes an existing canonical ``Event`` (and
 attaches the Post to it), or whether a brand-new Event should be created.
 
-Matching is purely deterministic, operating on structured fields — never on
-raw article text.
+Matching operates on structured fields (never raw article text).  By default
+the merge decision is handed to the qwen reasoning model (see below); the
+deterministic weighted score below is only used as a fallback.
 
 Scoring
 -------
@@ -27,6 +28,24 @@ Score bands (configurable thresholds):
   >= auto_merge_threshold (70)         → attach to existing Event
   >= possible_match_threshold (45)     → flag as POSSIBLE_MATCH (future review)
   <  possible_match_threshold          → create a new Event
+
+AI-backed matching
+------------------
+When ``settings.event_matcher.use_ai_matcher`` is enabled and candidates exist,
+the qwen reasoning model is asked whether the incoming extracted promotion is
+the same as each candidate that the deterministic weighted score flags as a
+possible match (``score >= possible_match_threshold``, sorted best-first and
+capped by ``ai_candidate_limit``; see ``voucherbot.services.ai.event_matcher_ai``).
+The model's ``is_same_promotion`` and ``confidence`` drive the decision:
+
+  is_same_promotion and confidence >= ai_auto_merge_confidence
+                                         → AUTO_MERGED
+  is_same_promotion and confidence >= ai_possible_match_confidence
+                                         → POSSIBLE_MATCH
+  otherwise                              → new Event
+
+The deterministic weighted scoring above remains as a fallback when the model
+is unavailable, no Groq key is configured, or no candidates exist.
 
 Source Priority & Field Merging
 --------------------------------
@@ -58,6 +77,10 @@ from voucherbot.config.settings import SOURCE_PRIORITY, settings
 from voucherbot.models.event import Event, EventStatus, MatchConfidence
 from voucherbot.models.post import Post
 from voucherbot.models.source import SourceType
+from voucherbot.services.ai.event_matcher_ai import (
+    EventMatchDecision,
+    compare_candidate,
+)
 from voucherbot.services.ai.schema import ExtractedEvent
 from voucherbot.services.ingestion.dedup import normalise_url
 
@@ -293,13 +316,18 @@ def _candidate_relevance(event: Event, extracted: ExtractedEvent) -> int:
 
 def _merge_fields(
     event: Event,
-    extracted: ExtractedEvent,
+    extracted: ExtractedEvent | Event,
     source_type: SourceType,
     post_id: int,
     match_score: int,
     match_confidence: MatchConfidence,
+    match_reason: Optional[str] = None,
 ) -> list[str]:
     """Merge non-null fields from ``extracted`` into ``event`` using source priority.
+
+    ``extracted`` may be an ``ExtractedEvent`` from the AI pipeline or another
+    ``Event`` (used by the consolidation sweep to fold one canonical Event into
+    another); both expose the same ``_MERGEABLE_FIELDS`` attributes.
 
     Merge rules (in order):
     1. Null incoming values are **never** written (preserves existing data).
@@ -353,6 +381,8 @@ def _merge_fields(
         "match_confidence": match_confidence.value,
         "fields_updated": updated_fields,
     }
+    if match_reason:
+        log_entry["reason"] = match_reason
     current_log: list[Any] = event.merge_log or []
     event.merge_log = current_log + [log_entry]
 
@@ -541,6 +571,44 @@ class EventMatcher:
         )
         return event, MatchConfidence.UPDATED
 
+    async def _pick_ai_match(
+        self, candidates: list[Event], extracted: ExtractedEvent
+    ) -> tuple[Optional[Event], Optional[EventMatchDecision]]:
+        """Ask qwen whether any candidate is the same promotion as ``extracted``.
+
+        The deterministic weighted score is used as a recall gate: only
+        candidates scoring at or above ``possible_match_threshold`` are
+        submitted to the model (sorted best-first, capped by
+        ``ai_candidate_limit``) so qwen calls stay bounded.  Returns the first
+        such candidate the model flags as the same promotion together with its
+        decision.  When the model is available but judges nothing a match,
+        returns ``(None, last_decision)`` so the caller creates a new Event
+        instead of merging.  When no candidate passes the gate or the model is
+        unavailable (a ``None`` decision), returns ``(None, None)`` so the
+        caller can fall back to deterministic scoring.
+        """
+        cfg = settings.event_matcher
+        gated: list[tuple[int, Event]] = []
+        for candidate in candidates:
+            score = _score_candidate(candidate, extracted)
+            if score >= cfg.possible_match_threshold:
+                gated.append((score, candidate))
+        gated.sort(key=lambda item: item[0], reverse=True)
+        ai_candidates = [event for _, event in gated[: cfg.ai_candidate_limit]]
+
+        last_decision: Optional[EventMatchDecision] = None
+        for candidate in ai_candidates:
+            decision = await compare_candidate(candidate, extracted)
+            if decision is None:
+                return None, None
+            last_decision = decision
+            if (
+                decision.is_same_promotion
+                and decision.confidence >= cfg.ai_possible_match_confidence
+            ):
+                return candidate, decision
+        return None, last_decision
+
     async def match_or_create(
         self,
         db: AsyncSession,
@@ -556,33 +624,61 @@ class EventMatcher:
         candidates = await self._find_candidates(db, extracted)
 
         best_event: Optional[Event] = None
-        best_score = 0
+        match_score = 0
+        best_reason: Optional[str] = None
+        confidence: MatchConfidence
 
-        for candidate in candidates:
-            score = _score_candidate(candidate, extracted)
-            if score > best_score:
-                best_score = score
-                best_event = candidate
+        # --- AI path: qwen decides whether a candidate is the same promotion. ---
+        ai_match = False
+        if cfg.use_ai_matcher and candidates and settings.groq_api_key:
+            ai_event, ai_decision = await self._pick_ai_match(candidates, extracted)
+            if ai_event is not None and ai_decision is not None:
+                best_event = ai_event
+                best_reason = ai_decision.reason
+                match_score = int(round(ai_decision.confidence * 100))
+                if ai_decision.confidence >= cfg.ai_auto_merge_confidence:
+                    confidence = MatchConfidence.AUTO_MERGED
+                else:
+                    confidence = MatchConfidence.POSSIBLE_MATCH
+                ai_match = True
+            elif ai_decision is not None:
+                # The model was available and judged no candidate a match.
+                confidence = MatchConfidence.NEW
+                ai_match = True
 
-        # --- Determine confidence band ---
-        if best_score >= cfg.auto_merge_threshold and best_event is not None:
-            confidence = MatchConfidence.AUTO_MERGED
-        elif best_score >= cfg.possible_match_threshold and best_event is not None:
-            confidence = MatchConfidence.POSSIBLE_MATCH
-        else:
-            confidence = MatchConfidence.NEW
-            best_event = None  # ignore low-confidence candidates
+        # --- Deterministic fallback when AI was not used or was unavailable. ---
+        if not ai_match:
+            best_score = 0
+            for candidate in candidates:
+                score = _score_candidate(candidate, extracted)
+                if score > best_score:
+                    best_score = score
+                    best_event = candidate
+            match_score = best_score
+            if best_score >= cfg.auto_merge_threshold and best_event is not None:
+                confidence = MatchConfidence.AUTO_MERGED
+            elif best_score >= cfg.possible_match_threshold and best_event is not None:
+                confidence = MatchConfidence.POSSIBLE_MATCH
+            else:
+                confidence = MatchConfidence.NEW
+                best_event = None  # ignore low-confidence candidates
 
         if best_event is not None:
             # --- Attach to existing Event ---
             updated = _merge_fields(
-                best_event, extracted, source_type, post.id, best_score, confidence
+                best_event,
+                extracted,
+                source_type,
+                post.id,
+                match_score,
+                confidence,
+                match_reason=best_reason,
             )
             logger.info(
                 "event_matcher: attached post to existing event",
                 event_id=best_event.id,
                 post_id=post.id,
-                score=best_score,
+                score=match_score,
                 confidence=confidence.value,
                 fields_updated=updated,
             )

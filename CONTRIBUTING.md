@@ -96,7 +96,7 @@ Key obligations that apply directly to this project:
 git clone <repo-url>
 cd voucherbot
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -e ".[dev]"
 
 # 2. Configure environment
 cp .env.example .env
@@ -120,7 +120,7 @@ voucherbot/
 ├── main.py                        # FastAPI app and lifespan
 ├── config/settings.py             # All configuration via pydantic-settings
 ├── core/                          # Exceptions and logging
-├── database/                      # Engine, init, and bootstrap
+├── database/                      # Engine, migrations, and bootstrap
 ├── models/                        # SQLAlchemy ORM models
 ├── providers/
 │   ├── base.py                    # BaseCollector contract
@@ -129,14 +129,21 @@ voucherbot/
 │   ├── reddit/
 │   │   ├── client.py              # Reddit API client ⚠️
 │   │   └── collector.py
-│   └── website/collector.py
+│   ├── website/collector.py
+│   ├── pearsonvue/collector.py    # Pearson VUE vendor page scraper
+│   └── training_provider/collector.py  # Training partner page scraper
 ├── services/
 │   ├── scheduler.py               # Asyncio scheduler loop
 │   ├── dispatcher.py              # Lease + source lifecycle
+│   ├── event_consolidation.py     # Periodic merge of duplicate events
+│   ├── retention.py               # Null out stale post content
 │   ├── ingestion/                 # Pipeline, dedup, event matching
-│   ├── ai/                        # Groq + Gemini provider chain
-│   └── email/                     # Resend notifications
-└── api/routers/                   # Read-only REST endpoints
+│   ├── ai/                        # Groq + Gemini provider chain, AI event matcher
+│   ├── email/                     # Resend notifications (transactional outbox)
+│   └── bot_notification/          # Voucher webhook to a bot server
+└── api/
+    ├── rate_limit.py              # Health-endpoint rate limiter
+    └── routers/health.py          # Read-only health endpoint
 ```
 
 Files marked ⚠️ contain policy-sensitive logic. Changes to these files require extra care and a detailed explanation in the PR.
@@ -161,10 +168,10 @@ Files marked ⚠️ contain policy-sensitive logic. Changes to these files requi
 New sources are defined in `voucherbot/database/bootstrap.py`. A source entry requires at minimum:
 
 - `name` — unique, descriptive
-- `type` — one of `REDDIT`, `RSS`, `BLOG`, `EVENT`, `FORUM`, `WEBSITE`, `API`
+- `type` — one of `REDDIT`, `RSS`, `BLOG`, `EVENT`, `FORUM`, `WEBSITE`, `API`, `PEARSONVUE`, `TRAINING_PROVIDER`
 - `base_url`
 - `priority_tier` — A, B, C, or D (see the scheduler table above)
-- `config` — a JSONB object with `feed_url` (RSS), `article_selector` + `content_selector` (Website), or `subreddit` (Reddit)
+- `config` — a JSONB object with `feed_url` (RSS), `article_selector` + `content_selector` (Website), `subreddit` (Reddit), or the vendor page type for Pearson VUE / training provider sources
 
 **Before adding a new web source:**
 

@@ -15,7 +15,7 @@ Coverage:
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -23,6 +23,7 @@ import pytest
 from voucherbot.config.settings import EventMatcherConfig, settings
 from voucherbot.models.event import Event, EventStatus, MatchConfidence
 from voucherbot.models.source import SourceType
+from voucherbot.services.ai.event_matcher_ai import EventMatchDecision
 from voucherbot.services.ai.schema import ExtractedEvent
 from voucherbot.services.ingestion.event_matcher import (
     _dates_overlap,
@@ -66,6 +67,26 @@ def _extracted(**kwargs: Any) -> ExtractedEvent:
     )
     defaults.update(kwargs)
     return ExtractedEvent(**defaults)
+
+
+def _db_mock() -> AsyncMock:
+    """AsyncMock DB assigning incremental ids to newly added Events on flush."""
+    created: list[Event] = []
+    db = AsyncMock()
+
+    def _add_side_effect(obj: object) -> None:
+        if isinstance(obj, Event):
+            created.append(obj)
+
+    db.add = MagicMock(side_effect=_add_side_effect)
+
+    async def _flush_side_effect() -> None:
+        for idx, evt in enumerate(created, start=1):
+            if evt.id is None:
+                evt.id = 9000 + idx
+
+    db.flush.side_effect = _flush_side_effect
+    return db
 
 
 # ---------------------------------------------------------------------------
@@ -533,10 +554,16 @@ class TestScenarioA:
         created_id = event_a.id
 
         # --- Post B: same promotion → should match existing Event ---
-        with patch.object(
-            matcher,
-            "_find_candidates",
-            return_value=[event_a],  # candidate found
+        with (
+            patch.object(matcher, "_find_candidates", return_value=[event_a]),
+            patch(
+                "voucherbot.services.ingestion.event_matcher.compare_candidate",
+                new=AsyncMock(
+                    return_value=EventMatchDecision(
+                        is_same_promotion=True, confidence=0.95
+                    )
+                ),
+            ),
         ):
             post_b = MagicMock()
             post_b.id = 2
@@ -725,3 +752,170 @@ class TestScenarioD:
         score = _score_candidate(e, x)
         # Only dates_absent (10) contributes.
         assert score == cfg.weight_date_overlap
+
+
+# ---------------------------------------------------------------------------
+# AI-backed matching (qwen decides whether two promotions are the same)
+# ---------------------------------------------------------------------------
+
+
+class TestAIMatching:
+    """Stage 3 AI path: the qwen decision replaces the weighted score."""
+
+    async def _match(
+        self,
+        matcher: EventMatcherCls,
+        candidates: list[Event],
+        extracted: ExtractedEvent,
+        decision: EventMatchDecision | None,
+    ) -> tuple[Event, MatchConfidence, AsyncMock, AsyncMock]:
+        db = _db_mock()
+        post = MagicMock()
+        post.id = 7
+        post.event_id = None
+        with (
+            patch.object(matcher, "_find_candidates", return_value=candidates),
+            patch(
+                "voucherbot.services.ingestion.event_matcher.compare_candidate",
+                new=AsyncMock(return_value=decision),
+            ) as compare,
+            patch.object(settings, "groq_api_key", "gsk_test"),
+        ):
+            event, confidence = await matcher.match_or_create(
+                db, extracted, post, SourceType.BLOG
+            )
+        return event, confidence, db, compare
+
+    @pytest.mark.asyncio
+    async def test_ai_high_confidence_match_auto_merges(
+        self, matcher: EventMatcherCls
+    ) -> None:
+        candidate = _event(id=1, vendor="microsoft", discount="50%")
+        extracted = _extracted(vendor="microsoft", discount="50%")
+        decision = EventMatchDecision(
+            is_same_promotion=True, confidence=0.95, reason="same promo"
+        )
+
+        event, confidence, db, compare = await self._match(
+            matcher, [candidate], extracted, decision
+        )
+
+        assert confidence == MatchConfidence.AUTO_MERGED
+        assert event.id == candidate.id
+        merge_log = cast(list[Any], event.merge_log or [])
+        assert merge_log and merge_log[-1]["reason"] == "same promo"
+        compare.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_ai_low_confidence_match_flags_possible(
+        self, matcher: EventMatcherCls
+    ) -> None:
+        candidate = _event(id=1, vendor="microsoft", discount="50%")
+        extracted = _extracted(vendor="microsoft", discount="50%")
+        decision = EventMatchDecision(is_same_promotion=True, confidence=0.6)
+
+        event, confidence, _, compare = await self._match(
+            matcher, [candidate], extracted, decision
+        )
+
+        assert confidence == MatchConfidence.POSSIBLE_MATCH
+        assert event.id == candidate.id
+
+    @pytest.mark.asyncio
+    async def test_ai_uncertain_match_creates_new_event(
+        self, matcher: EventMatcherCls
+    ) -> None:
+        candidate = _event(id=1, vendor="microsoft", discount="50%")
+        extracted = _extracted(vendor="microsoft", discount="50%")
+        decision = EventMatchDecision(is_same_promotion=True, confidence=0.3)
+
+        event, confidence, _, compare = await self._match(
+            matcher, [candidate], extracted, decision
+        )
+
+        assert confidence == MatchConfidence.NEW
+        assert event.id != candidate.id
+
+    @pytest.mark.asyncio
+    async def test_ai_confident_no_match_creates_new_event(
+        self, matcher: EventMatcherCls
+    ) -> None:
+        candidate = _event(id=1, vendor="microsoft", discount="50%")
+        extracted = _extracted(vendor="microsoft", discount="50%")
+        decision = EventMatchDecision(is_same_promotion=False, confidence=0.9)
+
+        event, confidence, _, compare = await self._match(
+            matcher, [candidate], extracted, decision
+        )
+
+        assert confidence == MatchConfidence.NEW
+        assert event.id != candidate.id
+
+    @pytest.mark.asyncio
+    async def test_ai_unavailable_falls_back_to_scoring(
+        self, matcher: EventMatcherCls
+    ) -> None:
+        candidate = _event(
+            id=1,
+            registration_url="https://ms.com/promo",
+            voucher_code="AZURE50",
+        )
+        extracted = _extracted(
+            registration_url="https://ms.com/promo",
+            voucher_code="AZURE50",
+        )
+
+        event, confidence, _, compare = await self._match(
+            matcher, [candidate], extracted, None
+        )
+
+        assert compare.await_count == 1  # attempted, but the model failed
+        assert confidence == MatchConfidence.AUTO_MERGED
+        assert event.id == candidate.id
+        merge_log = cast(list[Any], event.merge_log or [])
+        assert merge_log and "reason" not in (merge_log[-1] or {})
+
+    @pytest.mark.asyncio
+    async def test_ai_unavailable_fallback_does_not_merge_sparse(
+        self, matcher: EventMatcherCls
+    ) -> None:
+        candidate = _event(id=1, vendor="microsoft")
+        extracted = _extracted(vendor="amazon")
+
+        event, confidence, _, _ = await self._match(
+            matcher, [candidate], extracted, None
+        )
+
+        assert confidence == MatchConfidence.NEW
+        assert event.id != candidate.id
+
+    @pytest.mark.asyncio
+    async def test_ai_skips_candidates_below_deterministic_threshold(
+        self, matcher: EventMatcherCls
+    ) -> None:
+        candidate = _event(id=1, vendor="microsoft")
+        extracted = _extracted(vendor="amazon")  # deterministic score = 10 < 45
+
+        event, confidence, _, compare = await self._match(
+            matcher,
+            [candidate],
+            extracted,
+            EventMatchDecision(is_same_promotion=True, confidence=0.95),
+        )
+
+        assert confidence == MatchConfidence.NEW
+        compare.assert_not_awaited()  # gate keeps the model call bounded
+
+    @pytest.mark.asyncio
+    async def test_no_candidates_skips_ai(self, matcher: EventMatcherCls) -> None:
+        extracted = _extracted(vendor="microsoft")
+
+        event, confidence, _, compare = await self._match(
+            matcher,
+            [],
+            extracted,
+            EventMatchDecision(is_same_promotion=True, confidence=0.95),
+        )
+
+        assert confidence == MatchConfidence.NEW
+        compare.assert_not_awaited()

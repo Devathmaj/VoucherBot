@@ -12,6 +12,7 @@ These values are loaded from `.env` through Pydantic settings.
 |---|---:|---|
 | `DATABASE_URL` | required | Async SQLAlchemy connection string for PostgreSQL |
 | `IS_PROD` | `false` | When `true`, startup skips schema/bootstrap work and assumes the database is already prepared |
+| `IS_TEST` | `false` | When `true`, seeds a `website:local_test` source pointing at `http://localhost:35926/` for end-to-end pipeline testing |
 | `LOG_LEVEL` | `INFO` | Logging level used by the application |
 
 ### Email
@@ -21,7 +22,15 @@ These values are loaded from `.env` through Pydantic settings.
 | `RESEND_API_KEY` | `None` | API key for Resend-based email delivery |
 | `EMAIL_FROM` | `VoucherBot <onboarding@resend.dev>` | Sender address used for alerts |
 | `EMAIL_ID` | `None` | Recipient address for voucher notifications |
+| `EMAIL_REPLY_TO` | `None` | Optional per-email Reply-To; when unset Resend falls back to the From address |
 | `EMAIL_MIN_INTERVAL_SECONDS` | `5.0` | Minimum delay between email sends |
+
+### API rate limiting
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `HEALTH_RATE_LIMIT_PER_MINUTE` | `60` | Max `/health` requests per IP per minute; `0` disables the limit |
+| `RATE_LIMIT_TRUSTED_PROXIES` | `[]` | Comma-separated proxy IPs whose `X-Forwarded-For` values are trusted for rate limiting |
 
 ### Bot webhook notification
 
@@ -59,6 +68,7 @@ These values are loaded from `.env` through Pydantic settings.
 | `TICK_JOB_TIMEOUT_SECONDS` | `None` | Optional timeout for scheduler jobs |
 | `SOURCE_BACKOFF_BASE_MINUTES` | `5` | Base delay used for recoverable source failures |
 | `SOURCE_BACKOFF_MAX_MINUTES` | `360` | Maximum backoff delay for a source |
+| `CONTENT_RETENTION_DAYS` | `7` | Posts older than this are content-purged each scheduler sweep |
 
 ### AI providers
 
@@ -75,33 +85,58 @@ These values are loaded from `.env` through Pydantic settings.
 
 Some settings are not loaded from `.env` directly. They are defined in code and can be overridden in tests or custom runtime wiring.
 
-### Event matching weights
+### Event matching
 
 These are defined in the `EventMatcherConfig` model:
 
 | Setting | Default | Purpose |
 |---|---:|---|
-| `weight_registration_url` | `50` | Score weight for exact registration URL matches |
-| `weight_voucher_code` | `40` | Score weight for exact voucher-code matches |
-| `weight_promotion_name` | `20` | Score weight for promotion-name similarity |
-| `weight_vendor` | `15` | Score weight for vendor matches |
-| `weight_certifications` | `15` | Score weight for certification overlap |
-| `weight_date_overlap` | `10` | Score weight for date-range overlap |
-| `auto_merge_threshold` | `75` | Threshold above which an event is auto-merged |
-| `possible_match_threshold` | `60` | Threshold above which a possible match is flagged |
-| `name_similarity_threshold` | `0.60` | Similarity cutoff for promotion-name credit |
+| `use_ai_matcher` | `True` | When enabled, the qwen reasoning model decides whether an incoming promotion matches an existing event |
+| `ai_candidate_limit` | `5` | Maximum deterministic-matched candidates submitted to the model per post |
+| `ai_auto_merge_confidence` | `0.8` | Model confidence above which a same-promotion decision is an AUTO_MERGED |
+| `ai_possible_match_confidence` | `0.5` | Model confidence below which a same-promotion decision is treated as a new event |
+| `weight_registration_url` | `50` | Deterministic-fallback score weight for exact registration URL matches |
+| `weight_voucher_code` | `40` | Deterministic-fallback score weight for exact voucher-code matches |
+| `weight_promotion_name` | `25` | Deterministic-fallback score weight for promotion-name similarity |
+| `weight_vendor` | `20` | Deterministic-fallback score weight for vendor matches |
+| `weight_discount` | `20` | Deterministic-fallback score weight for discount matches |
+| `weight_promotion_type` | `10` | Deterministic-fallback score weight for promotion-type matches |
+| `weight_certifications` | `15` | Deterministic-fallback score weight for certification overlap |
+| `weight_date_overlap` | `10` | Deterministic-fallback score weight for date-range overlap |
+| `auto_merge_threshold` | `70` | Deterministic-fallback threshold above which an event is auto-merged |
+| `possible_match_threshold` | `45` | Deterministic-fallback threshold above which a possible match is flagged |
+| `name_similarity_threshold` | `0.60` | Deterministic-fallback similarity cutoff for promotion-name credit |
+| `candidate_limit` | `100` | Maximum candidate events retrieved for matching |
+
+The deterministic weighted score is only used as a fallback when the qwen model is unavailable, no `GROQ_API_KEY` is configured, or no candidates exist.
+
+### Event consolidation
+
+These are defined in the `EventConsolidationConfig` model and tune the periodic sweep that merges duplicate canonical events ([voucherbot/services/event_consolidation.py](../../voucherbot/services/event_consolidation.py)):
+
+| Setting | Default | Purpose |
+|---|---:|---|
+| `enabled` | `True` | Master switch for the consolidation sweep |
+| `interval_minutes` | `60` | Minimum wall-clock time between sweeps (rate-limits the qwen spend) |
+| `max_pairs_per_sweep` | `1000` | Hard cap on candidate pairs examined per sweep |
+| `max_ai_calls_per_sweep` | `25` | How many qwen confirmations to allow per sweep |
+| `deterministic_auto_merge_threshold` | `70` | Deterministic-score floor for merging when the model is unavailable |
+
+The sweep runs after each scheduler sweep, groups active events by normalised registration URL, voucher code, or vendor, gates pairs with the deterministic weighted score (`possible_match_threshold`), and lets qwen confirm whether each pair is the same real-world promotion before merging and archiving the loser.
 
 ### Source priority ordering
 
 The `SOURCE_PRIORITY` list defines how source types are ranked when merging event fields:
 
 1. `WEBSITE`
-2. `EVENT`
-3. `BLOG`
-4. `RSS`
-5. `FORUM`
-6. `REDDIT`
-7. `API`
+2. `PEARSONVUE`
+3. `TRAINING_PROVIDER`
+4. `EVENT`
+5. `BLOG`
+6. `RSS`
+7. `FORUM`
+8. `REDDIT`
+9. `API`
 
 Higher-priority sources overwrite lower-priority values when a new post updates an existing event.
 

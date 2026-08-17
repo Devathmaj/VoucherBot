@@ -160,32 +160,30 @@ The core database model is split across several tables and views:
 - `posts` stores ingested content and the AI analysis result alongside deduplication fields.
 - `events` stores canonical promotional events and merge log history.
 - `keywords` stores the keyword scoring catalog.
+- `vendor_mappings` resolves a source URL/name to its canonical vendor.
+- `notification_outbox` is the transactional outbox for voucher alert emails.
 - `pipeline_lock` is used for the dispatcher lease.
-- `voucher_posts` is a view used by the alerts endpoint.
+- `voucher_posts` is a read-only view of AI-confirmed vouchers.
 
 The important relationship is that many posts can reference the same canonical event, while the posts themselves remain distinct and are never merged.
 
 ### REST API surface
 
-The API is intentionally read-only and does not implement authentication. The main routes are:
+The API is intentionally minimal and read-only, and does not implement authentication. The single route is:
 
 - `GET /health`
-- `GET /ready`
-- `GET /sources`
-- `GET /posts`
-- `GET /alerts`
 
-These routes expose source state, ingested posts, and AI-confirmed voucher candidates.
+This endpoint reports service liveness and database reachability, and is rate-limited per client IP.
 
 ### Email and notifications
 
-The notification flow is implemented through the email service and Resend integration. Alerts contain voucher details such as vendor, promotion name, certification list, discount, voucher code, registration URL, and date information.
+The notification flow is implemented through the email service and Resend integration using a transactional outbox. Alerts contain voucher details such as vendor, promotion name, certification list, discount, voucher code, registration URL, and date information. The same voucher payload can also be POSTed to a remote bot server webhook.
 
 ### Database and deployment details
 
 The project uses SQLAlchemy async with `asyncpg`, Alembic migrations, and Docker-based local deployment. The startup path differs by environment:
 
-- in non-production mode, the app creates tables and seeds the source catalog,
+- in non-production mode, the app applies Alembic migrations and seeds the source catalog,
 - in production mode, the app assumes the schema and seed data already exist and uses a DML-only role.
 
 The repository also includes Render deployment configuration and a source-catalog verification script for smoke testing ingestion sources.

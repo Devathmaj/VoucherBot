@@ -6,7 +6,7 @@
 
 *Continuously monitors community and official sources for certification discounts, free exam opportunities, beta exams, and promotional campaigns.*
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/License-see%20LICENSE-lightgrey)
 ![Deploy](https://img.shields.io/badge/Deploy-Render-46E3B7?logo=render&logoColor=white)
 ![Status](https://img.shields.io/badge/status-active-success)
@@ -22,6 +22,8 @@ We heard your request loud and clear. 🎉
 Instead of going through the entire setup and hosting it yourself, you can now **add VoucherBot to your Discord or Telegram** and it will alert you the moment a certification voucher shows up. No code, no deploy, no hassle.
 
 Just head over to **[voucherbot-preview.pages.dev/#notifications](https://voucherbot-preview.pages.dev/#notifications)** to learn all about it and get it set up in minutes.
+
+The code for the Discord and Telegram bots lives in the separate [Notification-Bot](https://github.com/Devathmaj/Notification-Bot) repository, feel free to check it out.
 
 ---
 

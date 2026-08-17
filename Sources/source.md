@@ -2,7 +2,7 @@
 
 Human-readable reference for all official ingestion sources. The **authoritative runtime catalog** is [`voucherbot/database/bootstrap.py`](../voucherbot/database/bootstrap.py), which seeds the database on app startup.
 
-Policy reference: [`deep-research-report (1).md`](../deep-research-report%20(1).md). Collectors prefer RSS/APIs, identify as `VoucherBot`, obey `robots.txt` / Crawl-delay, and skip sources marked `unsupported` (ToS bans HTML scraping).
+Collectors prefer RSS/APIs, identify as `VoucherBot`, obey `robots.txt` / Crawl-delay, and skip sources marked `unsupported` (ToS bans HTML scraping).
 
 ## Files
 
@@ -27,7 +27,8 @@ Policy reference: [`deep-research-report (1).md`](../deep-research-report%20(1).
 | Collector | Items requested |
 |-----------|-----------------|
 | Reddit | 25 (`REDDIT_FETCH_LIMIT`) |
-| RSS / Website | 25 |
+| RSS / Website / Pearson VUE / Training Provider | 10 |
+| Curated voucher pages (`note_selector`) | 50 |
 
 Reddit is collected from public RSS feeds by default. The `REDDIT_INGESTION_ENABLED` flag in `.env` (default `false`) gates only the OAuth API: when `false`, the OAuth API is never called and posts come from the RSS feeds.
 
@@ -40,6 +41,7 @@ These remain in the catalog but are `enabled=false` / `unsupported=true` (RSS al
 - ISC2 Insights
 - Red Hat Training Specials
 - AWS Events / re:Invent pages
+- The Register (feed blocked by a proof-of-work challenge)
 
 ## Verify sources
 

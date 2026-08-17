@@ -120,7 +120,7 @@ pytest -v
 A typical test run will produce output similar to:
 
 ```text
-341 passed, 15 skipped, 1 warning in 6.29s
+418 passed, 15 skipped, 1 warning in 6.84s
 ```
 
 ### ✅ Passed
@@ -160,23 +160,28 @@ The suite is organised by module — each file targets one service, provider, or
 
 | Test file (tests) | Module under test | Highlights |
 |-------------------|-------------------|------------|
-| `test_analyzer.py` (35) | `voucherbot/services/ai/analyzer.py` | JSON extraction parsing (plain/fenced/invalid → safe default), token estimation, Groq/Gemini rate budgets and daily exhaustion, 429 retry handling, model fallback order, `analyze_post_batch` order preservation |
-| `test_bootstrap.py` (24) | `voucherbot/database/bootstrap.py` | Reddit tier/cadence rules, invalid-selector warnings, transient-error detection, retry-with-backoff (and no retry on `IntegrityError`), keyword seeding, bootstrap ordering + advisory-lock skip |
+| `test_analyzer.py` (43) | `voucherbot/services/ai/analyzer.py` | JSON extraction parsing (plain/fenced/invalid → safe default), token estimation, Groq/Gemini rate budgets and daily exhaustion, 429 retry handling, model fallback order, qwen low-confidence escalation, `analyze_post_batch` order preservation |
+| `test_bootstrap.py` (25) | `voucherbot/database/bootstrap.py` | Reddit tier/cadence rules, invalid-selector warnings, transient-error detection, retry-with-backoff (and no retry on `IntegrityError`), keyword seeding, bootstrap ordering + advisory-lock skip |
 | `test_pipeline.py` (29) | `voucherbot/services/ingestion/pipeline.py` | URL normalisation, vendor/collector resolution, fetch-limit resolution, `_process_one_source` state machine (keyword filter → dedup → AI → match → outbox → delivery) |
 | `test_pearsonvue_collector.py` (20) | `voucherbot/providers/pearsonvue/collector.py` | Slide/promo/card extraction, card dedup, URL resolution, robots/401/403/429/timeout paths, fetch limits |
 | `test_training_provider_collector.py` (18) | `voucherbot/providers/training_provider/collector.py` | GK/Ascendient/generic extractors, nav-link exclusion, description fallbacks, relative-URL resolution, error/limit paths |
 | `test_settings.py` (10) | `voucherbot/config/settings.py` | Hermetic pydantic-settings construction: defaults, empty-string→`None` validators, trusted-proxy lists, `EventMatcherConfig`, stable `SOURCE_PRIORITY` order |
 | `test_email_sender.py` (8) | `voucherbot/services/email/sender.py` | `send_email` params/reply-to/idempotency key, init state, `send_test_email` skip/send, skip-when-uninitialised |
 | `test_init_db.py` (5) | `voucherbot/database/init_db.py` | Source-type enum migration (add-only), `create_all` excluding view models |
-| `test_collectors.py` (64) | `voucherbot/providers/{rss,website}/collector.py` | Feed-URL normalisation, HTML/content-type rejection for RSS, mocked `polite_get` collection, UA identification, per-type skips |
+| `test_collectors.py` (67) | `voucherbot/providers/{rss,website}.collector` | Feed-URL normalisation, HTML/content-type rejection for RSS, mocked `polite_get` collection, UA identification, per-type skips |
 | `test_dedup.py` (21) | `voucherbot/services/ingestion/dedup.py` | URL canonicalisation (tracking params, fragments, scheme), content/identity hashing, batch deduplication |
-| `test_dispatcher.py` (21) | `voucherbot/services/dispatcher.py` | Backoff growth/cap, poll-interval resolution, tick lifecycle (busy/idle/ran/failed), due-source selection |
-| `test_event_matcher.py` (74) | `voucherbot/services/ingestion/event_matcher.py` | Shared-event scenarios (two posts → one event), possible matches, event updates |
+| `test_dispatcher.py` (22) | `voucherbot/services/dispatcher.py` | Backoff growth/cap, poll-interval resolution, tick lifecycle (busy/idle/ran/failed), due-source selection, unrecoverable-error disables |
+| `test_event_matcher.py` (82) | `voucherbot/services/ingestion/event_matcher.py` | Shared-event scenarios (two posts → one event), possible matches, event updates, source-priority field merging |
+| `test_event_matcher_ai.py` (14) | `voucherbot/services/ai/event_matcher_ai.py` | `EventMatchDecision` parsing, prompt/serialisation helpers, `compare_candidate`/`compare_events` fallback semantics |
+| `test_bot_notification.py` (7) | `voucherbot/services/bot_notification/notifier.py` | Webhook payload builder, `Authorization` header, skip-when-unconfigured, HTTP error handling |
+| `test_event_consolidation.py` (24) | `voucherbot/services/event_consolidation.py` | Candidate-pair discovery, deterministic gating, AI/deterministic merge decisions, survivor selection, throttling |
 | `test_email_notifications.py` (4) | `voucherbot/services/email/notifications.py` | Safe-URL allow/deny list, voucher email builder |
 | `test_http_policy.py` (2) | `voucherbot/providers/http_policy.py` | Robots.txt parsing/caching, politeness delays, per-domain policy state |
 | `test_logging.py` (7) | `voucherbot/core/logging.py` | Structlog processor chain, log-level setup |
-| `test_main.py` (6) | `voucherbot/main.py` + `api/routers/health.py` | `/health` 200 via dependency-overridden session; rate limiting (boundary, disable-at-0, proxy handling) |
+| `test_main.py` (9) | `voucherbot/main.py` + `api/routers/health.py` | `/health` 200 via dependency-overridden session; rate limiting (boundary, disable-at-0, proxy handling) |
+| `test_migrations.py` (4) | `migrations/` | Chain reachable from base to head, numeric `sourcetype` enum values replayable |
 | `test_notification_outbox.py` (8) | `voucherbot/services/email/notifications.py` | Idempotency keys, outbox staging, delivery + `is_notified` update, retry/`FAILED` at max attempts, skip-when-unconfigured |
+| `test_retention.py` (4) | `voucherbot/services/retention.py` | Content-purge cutoff, untouched columns, config-driven behaviour |
 
 **Conventions:** HTTP providers patch `polite_get` with an `AsyncMock` returning a hand-built `httpx.Response`; AI providers patch the client factories and rate-budget internals; email patches `resend.Emails.send`. Modules reading a global `settings` object get it patched with a `SimpleNamespace(...)` helper, while `test_settings.py` builds fresh `Settings` instances with `_env_file=None` and an autouse fixture clearing the environment. DB-bound functions use fake async sessions that route on `str(statement)` so unexpected SQL fails loudly.
 
@@ -195,7 +200,7 @@ IS_TEST=true
 IS_PROD=false
 ```
 
-- `IS_TEST=true` — seeds a `website:local_test` source pointing at `http://localhost:35926/` (see `voucherbot/database/bootstrap.py:967-985`)
+- `IS_TEST=true` — seeds a `website:local_test` source pointing at `http://localhost:35926/` (see `voucherbot/database/bootstrap.py:983-1001`)
 - `IS_PROD=false` — the app creates tables and runs bootstrap on startup
 
 ### 2. Start the Local Test Server
@@ -219,7 +224,7 @@ The server listens on `http://localhost:35926/`.
 
 ### 3. How the Scraper Works
 
-The test source is defined at **`voucherbot/database/bootstrap.py:967-985`** (`_test_source`):
+The test source is defined at **`voucherbot/database/bootstrap.py:983-1001`** (`_test_source`):
 
 ```python
 "config": {
@@ -233,7 +238,7 @@ The test source is defined at **`voucherbot/database/bootstrap.py:967-985`** (`_
 }
 ```
 
-The `WebsiteCollector` (`voucherbot/providers/website/collector.py:28-41`) reads these selectors and scrapes the page using BeautifulSoup.
+The `WebsiteCollector` (`voucherbot/providers/website/collector.py:38-46`) reads these selectors and scrapes the page using BeautifulSoup.
 
 The `index.html` at `D:\components\index.html` contains `.item` divs with `<h2>` titles — this structure matches the default selectors. **To test different content, edit the HTML or the selectors.**
 
@@ -287,9 +292,9 @@ To change how the test page is parsed, edit:
 
 | File | Lines | What to change |
 |------|-------|----------------|
-| `voucherbot/database/bootstrap.py` | 967-985 | Source config (`article_selector`, `title_selector`, `link_selector`, `query_terms`) |
-| `voucherbot/providers/website/collector.py` | 28-41 | Default selector fallbacks |
-| `voucherbot/config/settings.py` | 68 | `is_test` setting |
+| `voucherbot/database/bootstrap.py` | 983-1001 | Source config (`article_selector`, `title_selector`, `link_selector`, `query_terms`) |
+| `voucherbot/providers/website/collector.py` | 38-46 | Default selector fallbacks |
+| `voucherbot/config/settings.py` | 103-176 | `is_test` and related settings |
 
 After changing source config, restart the app so bootstrap re-upserts the source.
 
