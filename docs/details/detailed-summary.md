@@ -230,14 +230,13 @@ The structured fields include:
 
 ### Stage 4 — Event matching
 
-The matcher in [voucherbot/services/ingestion/event_matcher.py](../../voucherbot/services/ingestion/event_matcher.py) compares extracted fields against existing active events. It uses a weighted score with thresholds for:
+The matcher in [voucherbot/services/ingestion/event_matcher.py](../../voucherbot/services/ingestion/event_matcher.py) decides whether an extracted promotion is the same real-world promotion as an existing active event. By default it asks the qwen reasoning model ([voucherbot/services/ai/event_matcher_ai.py](../../voucherbot/services/ai/event_matcher_ai.py)) to compare the incoming promotion against the candidate events that the deterministic weighted score flags as possible matches (score >= `possible_match_threshold`, capped by `ai_candidate_limit`):
 
-- registration URL
-- voucher code
-- promotion name similarity
-- vendor
-- certification overlap
-- date overlap
+- `is_same_promotion` and `confidence >= ai_auto_merge_confidence` → `AUTO_MERGED`
+- `is_same_promotion` and `confidence >= ai_possible_match_confidence` → `POSSIBLE_MATCH`
+- otherwise → `NEW`
+
+When the model is unavailable, no `GROQ_API_KEY` is configured, or no candidates exist, it falls back to the legacy weighted score over registration URL, voucher code, promotion-name similarity, vendor, discount, promotion type, certification overlap, and date overlap.
 
 The result is one of `AUTO_MERGED`, `POSSIBLE_MATCH`, or `NEW`.
 

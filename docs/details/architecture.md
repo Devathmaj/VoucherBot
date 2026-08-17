@@ -45,6 +45,7 @@ The main implementation areas are:
 - [voucherbot/services/dispatcher.py](../../voucherbot/services/dispatcher.py) — lease handling, due-source selection, success/failure state updates
 - [voucherbot/services/ingestion/pipeline.py](../../voucherbot/services/ingestion/pipeline.py) — end-to-end per-source pipeline
 - [voucherbot/services/ingestion/event_matcher.py](../../voucherbot/services/ingestion/event_matcher.py) — canonical event matching and field merging
+- [voucherbot/services/event_consolidation.py](../../voucherbot/services/event_consolidation.py) — periodic merge of duplicate canonical events
 - [voucherbot/services/ai/analyzer.py](../../voucherbot/services/ai/analyzer.py) — AI extraction provider chain and batching
 - [voucherbot/api/routers](../../voucherbot/api/routers) — read-only HTTP endpoints for sources, posts, alerts, and health
 
@@ -98,20 +99,32 @@ New or updated posts are sent to [voucherbot/services/ai/analyzer.py](../../vouc
 
 ### 5. Event matching
 
-The matcher in [voucherbot/services/ingestion/event_matcher.py](../../voucherbot/services/ingestion/event_matcher.py) compares extracted fields against existing active events. It uses a weighted score with thresholds for:
+The matcher in [voucherbot/services/ingestion/event_matcher.py](../../voucherbot/services/ingestion/event_matcher.py) decides whether an extracted promotion is the same real-world promotion as an existing active event.
 
-- registration URL
-- voucher code
-- promotion name similarity
-- vendor
-- certification overlap
-- date overlap
+By default it runs the incoming promotion through the qwen reasoning model ([voucherbot/services/ai/event_matcher_ai.py](../../voucherbot/services/ai/event_matcher_ai.py)), comparing it against the candidate events that the deterministic weighted score flags as possible matches (score >= `possible_match_threshold`, capped by `ai_candidate_limit`) and letting the model decide whether each is the same promotion:
+
+- `is_same_promotion` and `confidence >= ai_auto_merge_confidence` → `AUTO_MERGED`
+- `is_same_promotion` and `confidence >= ai_possible_match_confidence` → `POSSIBLE_MATCH`
+- otherwise → `NEW`
+
+When the model is unavailable, no `GROQ_API_KEY` is configured, or no candidates exist, the matcher falls back to the legacy weighted score over registration URL, voucher code, promotion-name similarity, vendor, discount, promotion type, certification overlap, and date overlap. The model's `reason` is recorded in `merge_log` for auditability.
 
 The result is one of `AUTO_MERGED`, `POSSIBLE_MATCH`, or `NEW`, and the matcher may merge fields into the canonical event while appending to `merge_log`.
 
 ### 6. Email notification
 
 If the AI extraction yields a voucher candidate and the event decision is not `AUTO_MERGED`, the notification service sends an email through Resend. The post is marked `is_notified` only after the send succeeds.
+
+## Event consolidation
+
+Two posts describing the same promotion can become separate events when their sources were processed at different times — the ingestion-time matcher only sees candidates that already exist at that moment. The consolidation sweep in [voucherbot/services/event_consolidation.py](../../voucherbot/services/event_consolidation.py) fixes this retroactively. It runs after every scheduler sweep (throttled by `settings.consolidation.interval_minutes`) and is cross-instance serialised with a Postgres advisory transaction lock.
+
+1. **Discover** — active events are grouped into candidate pairs sharing a cheap identity signal: normalised registration URL, voucher code (case-normalised), or vendor. Pairs are deduplicated by the canonical `(min_id, max_id)` key and capped by `max_pairs_per_sweep`; buckets are sampled to bound quadratic work.
+2. **Gate** — each pair is scored with the same deterministic weighted score used at ingestion; only pairs at or above `possible_match_threshold` proceed.
+3. **Confirm** — when a Groq key is configured, qwen is asked whether the pair is the same real-world promotion via `compare_events` (the same judge used by the matcher). A `same` decision at `confidence >= ai_possible_match_confidence` merges; otherwise the pair is kept separate. A model outage falls back to the deterministic score at or above `deterministic_auto_merge_threshold`.
+4. **Merge** — the pair's survivor is the event with more posts (ties keep the older event). The absorbed event's fields are folded in through the same `_merge_fields` source-priority machinery, its posts are re-pointed to the survivor, both `merge_log` entries are appended, and the absorbed event is set to `ARCHIVED`.
+
+An absorbed event is never folded into a second target within one sweep, and the whole job never raises — failures are logged so the scheduler loop stays healthy.
 
 ## Data model summary
 

@@ -360,24 +360,21 @@ def _parse_to_extracted_event(raw_text: str) -> ExtractedEvent | None:
 # ---------------------------------------------------------------------------
 # Provider adapters
 # ---------------------------------------------------------------------------
-async def _call_groq_model(
-    title: str, content: str | None, model: str, source_name: str | None = None
-) -> ExtractedEvent | None:
-    """Call a specific Groq model. Returns None on daily limit or non-retryable failure."""
+async def _call_groq_raw(messages: list[dict[str, str]], model: str) -> str | None:
+    """Low-level Groq chat completion call sharing rate-limit and budget logic.
+
+    Used by both the structured extractor (``_call_groq_model``) and the qwen
+    event matcher (``voucherbot.services.ai.event_matcher_ai``).  Returns the
+    raw response text, or None on model unavailability, daily-limit exhaustion,
+    or non-retryable failure.
+    """
     if not is_model_available(model):
         logger.info("ai.analyzer: model daily limit exhausted, skipping", model=model)
         return None
 
     client = AsyncGroq(api_key=settings.groq_api_key)
-    content_for_prompt = content or "(no content)"
-
-    source_hint = f"Source: {source_name}\n" if source_name else ""
-    user_prompt = f"{source_hint}Title: {title}\n\nContent: {content_for_prompt}"
-    messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content": user_prompt},
-    ]
-    estimated_tokens = _estimate_tokens(_SYSTEM_PROMPT + user_prompt)
+    prompt_text = "\n".join(m.get("content", "") for m in messages)
+    estimated_tokens = _estimate_tokens(prompt_text)
 
     for attempt in range(1, _MAX_RETRIES + 1):
         try:
@@ -401,7 +398,7 @@ async def _call_groq_model(
             actual = getattr(resp.usage, "total_tokens", None) or estimated_tokens
             await _settle_groq_budget(rid, actual, model)
             raw_text: str = resp.choices[0].message.content.strip()
-            return _parse_to_extracted_event(raw_text)
+            return raw_text or None
         except Exception as exc:
             error_str = str(exc)
             if "429" in error_str:
@@ -434,6 +431,24 @@ async def _call_groq_model(
                 )
                 return None
     return None
+
+
+async def _call_groq_model(
+    title: str, content: str | None, model: str, source_name: str | None = None
+) -> ExtractedEvent | None:
+    """Call a specific Groq model. Returns None on daily limit or non-retryable failure."""
+    content_for_prompt = content or "(no content)"
+
+    source_hint = f"Source: {source_name}\n" if source_name else ""
+    user_prompt = f"{source_hint}Title: {title}\n\nContent: {content_for_prompt}"
+    messages = [
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ]
+    raw_text = await _call_groq_raw(messages, model)
+    if raw_text is None:
+        return None
+    return _parse_to_extracted_event(raw_text)
 
 
 async def _call_groq(

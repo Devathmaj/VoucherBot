@@ -75,21 +75,44 @@ These values are loaded from `.env` through Pydantic settings.
 
 Some settings are not loaded from `.env` directly. They are defined in code and can be overridden in tests or custom runtime wiring.
 
-### Event matching weights
+### Event matching
 
 These are defined in the `EventMatcherConfig` model:
 
 | Setting | Default | Purpose |
 |---|---:|---|
-| `weight_registration_url` | `50` | Score weight for exact registration URL matches |
-| `weight_voucher_code` | `40` | Score weight for exact voucher-code matches |
-| `weight_promotion_name` | `20` | Score weight for promotion-name similarity |
-| `weight_vendor` | `15` | Score weight for vendor matches |
-| `weight_certifications` | `15` | Score weight for certification overlap |
-| `weight_date_overlap` | `10` | Score weight for date-range overlap |
-| `auto_merge_threshold` | `75` | Threshold above which an event is auto-merged |
-| `possible_match_threshold` | `60` | Threshold above which a possible match is flagged |
-| `name_similarity_threshold` | `0.60` | Similarity cutoff for promotion-name credit |
+| `use_ai_matcher` | `True` | When enabled, the qwen reasoning model decides whether an incoming promotion matches an existing event |
+| `ai_candidate_limit` | `5` | Maximum deterministic-matched candidates submitted to the model per post |
+| `ai_auto_merge_confidence` | `0.8` | Model confidence above which a same-promotion decision is an AUTO_MERGED |
+| `ai_possible_match_confidence` | `0.5` | Model confidence below which a same-promotion decision is treated as a new event |
+| `weight_registration_url` | `50` | Deterministic-fallback score weight for exact registration URL matches |
+| `weight_voucher_code` | `40` | Deterministic-fallback score weight for exact voucher-code matches |
+| `weight_promotion_name` | `25` | Deterministic-fallback score weight for promotion-name similarity |
+| `weight_vendor` | `20` | Deterministic-fallback score weight for vendor matches |
+| `weight_discount` | `20` | Deterministic-fallback score weight for discount matches |
+| `weight_promotion_type` | `10` | Deterministic-fallback score weight for promotion-type matches |
+| `weight_certifications` | `15` | Deterministic-fallback score weight for certification overlap |
+| `weight_date_overlap` | `10` | Deterministic-fallback score weight for date-range overlap |
+| `auto_merge_threshold` | `70` | Deterministic-fallback threshold above which an event is auto-merged |
+| `possible_match_threshold` | `45` | Deterministic-fallback threshold above which a possible match is flagged |
+| `name_similarity_threshold` | `0.60` | Deterministic-fallback similarity cutoff for promotion-name credit |
+| `candidate_limit` | `100` | Maximum candidate events retrieved for matching |
+
+The deterministic weighted score is only used as a fallback when the qwen model is unavailable, no `GROQ_API_KEY` is configured, or no candidates exist.
+
+### Event consolidation
+
+These are defined in the `EventConsolidationConfig` model and tune the periodic sweep that merges duplicate canonical events ([voucherbot/services/event_consolidation.py](../../voucherbot/services/event_consolidation.py)):
+
+| Setting | Default | Purpose |
+|---|---:|---|
+| `enabled` | `True` | Master switch for the consolidation sweep |
+| `interval_minutes` | `60` | Minimum wall-clock time between sweeps (rate-limits the qwen spend) |
+| `max_pairs_per_sweep` | `1000` | Hard cap on candidate pairs examined per sweep |
+| `max_ai_calls_per_sweep` | `25` | How many qwen confirmations to allow per sweep |
+| `deterministic_auto_merge_threshold` | `70` | Deterministic-score floor for merging when the model is unavailable |
+
+The sweep runs after each scheduler sweep, groups active events by normalised registration URL, voucher code, or vendor, gates pairs with the deterministic weighted score (`possible_match_threshold`), and lets qwen confirm whether each pair is the same real-world promotion before merging and archiving the loser.
 
 ### Source priority ordering
 

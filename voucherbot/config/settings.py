@@ -43,6 +43,45 @@ class EventMatcherConfig(BaseModel):
     #   "Microsoft Fabric Data Days"        vs "Fabric Data Days"            (~0.76)
     name_similarity_threshold: float = 0.60
 
+    # --- AI-backed matching ---
+    # When enabled, the qwen reasoning model decides whether an incoming
+    # promotion is the same as an existing candidate instead of the weighted
+    # score.  Deterministic scoring is kept as a fallback when the model is
+    # unavailable or no candidates exist.
+    use_ai_matcher: bool = True
+    # How many relevance-ranked candidates to submit to the model per post.
+    ai_candidate_limit: int = 5
+    # Decision-confidence bands (0–1) for the AI matcher output.  A candidate
+    # flagged as the same promotion merges when confidence >= possible band;
+    # it is an auto-merge only when confidence >= auto-merge band.
+    ai_auto_merge_confidence: float = 0.8
+    ai_possible_match_confidence: float = 0.5
+
+
+class EventConsolidationConfig(BaseModel):
+    """Periodic sweep that merges duplicate canonical Events.
+
+    Two Events that the ingestion-time matcher could not see at once (e.g.
+    created from different sources on different sweeps) are detected by a
+    periodic job: Events sharing a cheap identity signal (normalised
+    registration URL, voucher code, or vendor) are gated by the deterministic
+    weighted score, and qwen then confirms whether each pair is the same
+    real-world promotion.  The survivor keeps its Events posts, the absorbed
+    Event is archived, and its posts are re-pointed.
+    """
+
+    # Master switch for the consolidation sweep.
+    enabled: bool = True
+    # Minimum wall-clock time between sweeps (rate-limits the qwen spend).
+    interval_minutes: int = 60
+    # Hard cap on candidate pairs examined per sweep (bounds quadratic work).
+    max_pairs_per_sweep: int = 1000
+    # How many qwen calls to allow per sweep (each is billed).
+    max_ai_calls_per_sweep: int = 25
+    # Deterministic-score floor for a merge when the model is unavailable;
+    # mirrors auto_merge_threshold so behaviour matches ingestion-time matching.
+    deterministic_auto_merge_threshold: int = 70
+
 
 # Ordered from most to least authoritative. Lower index = higher priority.
 # Used by the EventMatcher when merging fields from a new post into an existing
@@ -128,6 +167,9 @@ class Settings(BaseSettings):
     # Event matching (nested, not sourced from env — override in tests by
     # constructing Settings(event_matcher=EventMatcherConfig(...)))
     event_matcher: EventMatcherConfig = EventMatcherConfig()
+
+    # Periodic deduplication of already-created canonical Events.
+    consolidation: EventConsolidationConfig = EventConsolidationConfig()
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
