@@ -167,7 +167,7 @@ class TestPickGroqModel:
         weights = list(choices.call_args.kwargs["weights"])
         assert population == analyzer._GROQ_BATCH_MODELS
         assert set(weights) == {0.5}
-        assert "qwen/qwen3.6-27b" not in population
+        assert "qwen/qwen3.8-27b" not in population
 
     def test_skips_exhausted_models_when_picking(self) -> None:
         _exhaust_daily("openai/gpt-oss-20b")
@@ -271,7 +271,7 @@ async def test_call_groq_model_sets_qwen_params() -> None:
         ),
         patch("voucherbot.services.ai.analyzer._settle_groq_budget", new=AsyncMock()),
     ):
-        result = await analyzer._call_groq_model("Title", "Content", "qwen/qwen3.6-27b")
+        result = await analyzer._call_groq_model("Title", "Content", "qwen/qwen3.8-27b")
 
     assert result is not None
     call = client.chat.completions.create.await_args

@@ -9,7 +9,7 @@ canonical ``ExtractedEvent`` (defined in ``voucherbot.services.ai.schema``).
 Internally, providers are tried in priority order:
   1. Groq — each post routed 50/50 across openai/gpt-oss-20b and
      openai/gpt-oss-120b; low-confidence results are re-analyzed by
-     qwen/qwen3.6-27b (a reasoning model)
+     qwen/qwen3.8-27b (a reasoning model)
   2. Gemini  (final fallback on non-429 failure)
 
 Each adapter is responsible for converting its raw provider response into an
@@ -110,7 +110,7 @@ _SYSTEM_PROMPT = (
 _MAX_RETRIES = 3
 _FALLBACK_WAIT_S = 65
 # Primary Groq routing. Each post is routed to one of these models with equal
-# weight (50/50) across the two gpt-oss models. qwen/qwen3.6-27b is NOT a
+# weight (50/50) across the two gpt-oss models. qwen/qwen3.8-27b is NOT a
 # primary router: it is a reasoning model reserved for re-analyzing
 # low-confidence results from the gpt-oss pair (see ``_maybe_escalate_to_qwen``).
 _GROQ_MODEL_WEIGHTS: dict[str, float] = {
@@ -122,7 +122,7 @@ _GROQ_BATCH_MODELS: list[str] = list(_GROQ_MODEL_WEIGHTS.keys())
 # Reasoning model used to re-analyze low-confidence primary results. Kept out of
 # ``_GROQ_BATCH_MODELS`` so daily-exhaustion and budget accounting treat it as
 # the escalation tier rather than a primary router.
-_GROQ_REASONER_MODEL = "qwen/qwen3.6-27b"
+_GROQ_REASONER_MODEL = "qwen/qwen3.8-27b"
 
 # Primary results below this confidence trigger a qwen re-analysis.
 _GROQ_LOW_CONFIDENCE_THRESHOLD = 0.6
@@ -130,17 +130,17 @@ _GROQ_LOW_CONFIDENCE_THRESHOLD = 0.6
 _GROQ_MODEL_TPM = {
     "openai/gpt-oss-120b": 8000,
     "openai/gpt-oss-20b": 8000,
-    "qwen/qwen3.6-27b": 8000,
+    "qwen/qwen3.8-27b": 8000,
 }
 _GROQ_MODEL_TPD = {
     "openai/gpt-oss-120b": 200_000,
     "openai/gpt-oss-20b": 200_000,
-    "qwen/qwen3.6-27b": 200_000,
+    "qwen/qwen3.8-27b": 200_000,
 }
 _GROQ_MODEL_RPD = {
     "openai/gpt-oss-120b": 1_000,
     "openai/gpt-oss-20b": 1_000,
-    "qwen/qwen3.6-27b": 1_000,
+    "qwen/qwen3.8-27b": 1_000,
 }
 
 # Per-model tuning overrides.  Reasoning models burn completion tokens on
@@ -148,7 +148,7 @@ _GROQ_MODEL_RPD = {
 # server-side JSON validator then rejects it (400 `failed_generation`).
 # Qwen3.6 27B also performs best around temperature 0.6 (Groq docs).
 _GROQ_MODEL_PARAMS = {
-    "qwen/qwen3.6-27b": {
+    "qwen/qwen3.8-27b": {
         "temperature": 0.6,
         "top_p": 0.95,
         "max_completion_tokens": 2048,
