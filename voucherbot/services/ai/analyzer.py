@@ -80,6 +80,12 @@ _SYSTEM_PROMPT = (
     "(e.g., vendor certification pages, course catalog pages). The redemption page "
     "for a voucher code or the promotion landing page is ideal. Use null if no "
     "relevant URL is found.\n\n"
+    "For end_date: capture expiry or expiration dates and map them to end_date. "
+    "Look for phrases like 'expires', 'valid until', 'ends on', 'offer ends', "
+    "'promotion valid through', 'by date', 'deadline', 'before date', or any "
+    "date that indicates when the promotion stops being valid. Convert to "
+    "YYYY-MM-DD format. Use null if no expiry/end date is present in the "
+    "content — do not guess or assume.\n\n"
     "Respond with ONLY a valid JSON object matching this exact schema. If a field is unknown or not mentioned, use the JSON `null` literal (do not use strings like 'not mentioned'). Do NOT include comments.\n"
     "{\n"
     '  "is_voucher": true | false,\n'
