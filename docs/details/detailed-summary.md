@@ -298,7 +298,7 @@ The AI analyzer uses a provider chain anchored around Groq and Gemini.
 ### Provider chain
 
 - Groq models are tried first — each post is routed 50/50 across `openai/gpt-oss-20b` and `openai/gpt-oss-120b`,
-- low-confidence primary results are re-analyzed by the qwen reasoning model (`qwen/qwen3.6-27b`),
+- low-confidence primary results are re-analyzed by the qwen reasoning model (`qwen/qwen3.8-27b`),
 - the first successful response wins,
 - Gemini is used as the final fallback,
 - retries are applied for rate-limit errors,
