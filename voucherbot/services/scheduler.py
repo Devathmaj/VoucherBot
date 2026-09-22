@@ -16,9 +16,11 @@ from datetime import datetime, timezone
 import structlog
 from sqlalchemy import func, or_, select
 
+from voucherbot.config.settings import settings
 from voucherbot.database.connection import session_scope
 from voucherbot.models.notification import NotificationOutbox, NotificationStatus
 from voucherbot.models.source import Source
+from voucherbot.providers.Kodexis.client import KodexisRedditClient
 from voucherbot.providers.reddit.client import RedditClient
 from voucherbot.providers.reddit.collector import RedditCollector
 from voucherbot.providers.rss.collector import RssCollector
@@ -33,8 +35,9 @@ from voucherbot.services.retention import purge_expired_post_content
 logger = structlog.get_logger(__name__)
 
 _reddit_client = RedditClient()
+_kodexis_client = KodexisRedditClient(settings.kodexis_api_key) if settings.kodexis_api_key else None
 _collectors = {
-    "reddit": RedditCollector(_reddit_client),
+    "reddit": RedditCollector(_reddit_client, _kodexis_client),
     "rss": RssCollector(),
     "web": WebsiteCollector(),
     "pearsonvue": PearsonVUECollector(),
@@ -180,3 +183,5 @@ async def stop_scheduler() -> None:
         _loop_task.cancel()
         await asyncio.gather(_loop_task, return_exceptions=True)
     await _reddit_client.close()
+    if _kodexis_client:
+        await _kodexis_client.close()
