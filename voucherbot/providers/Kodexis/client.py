@@ -5,8 +5,7 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
-KODEXIS_API_BASE = "https://api.kodexis.com/v1"
-KODEXIS_REDDIT_ENDPOINT = "/reddit/posts"
+KODEXIS_API_BASE = "https://app.kodexisapi.com"
 
 
 class KodexisRedditClient:
@@ -31,16 +30,20 @@ class KodexisRedditClient:
         """Fetch latest posts from a subreddit using Kodexis API."""
         try:
             response = await self.http_client.get(
-                KODEXIS_REDDIT_ENDPOINT,
+                f"/marketplace/reddit/api/reddit/{subreddit}",
                 params={
-                    "subreddit": subreddit,
                     "sort": "new",
-                    "limit": limit,
+                    "limit": min(limit, 10),  # API max is 10
                 },
             )
             response.raise_for_status()
             data = response.json()
-            return data.get("posts", [])
+            # Parse Reddit's Listing format
+            posts = []
+            for child in data.get("data", {}).get("children", []):
+                if child.get("kind") == "t3":  # t3 = link/post
+                    posts.append(child.get("data", {}))
+            return posts
         except httpx.HTTPStatusError as e:
             logger.error(
                 "Kodexis: HTTP error fetching posts from {subreddit}",
