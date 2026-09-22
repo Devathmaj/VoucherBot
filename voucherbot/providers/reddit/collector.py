@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote_plus
+import re
 
 import asyncio
 
@@ -77,10 +78,48 @@ class RedditCollector(BaseCollector):
             )
             return []
 
-        return self._normalize_kodexis_posts(subreddit_name, raw_posts)
+        filtered_posts = self._filter_exam_pass_posts(raw_posts)
+        return self._normalize_kodexis_posts(subreddit_name, filtered_posts, limit)
+
+    def _filter_exam_pass_posts(
+        self, raw_posts: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Filter out posts mentioning 'exam' or 'certification' + 'pass'/'passed'.
+        
+        Only filters when 'exam' or 'certification' appear as standalone terms,
+        not as part of 'free exam', 'exam voucher', 'certification voucher', etc.
+        """
+        filtered = []
+        pass_regex = re.compile(r"\b(pass|passed|passing)\b")
+        exam_regex = re.compile(r"\bexam\b")
+        cert_regex = re.compile(r"\bcertification\b")
+        
+        exclude_exam = re.compile(r"\b(free exam|exam voucher|exam credit|beta exam|retake)\b")
+        exclude_cert = re.compile(r"\b(free certification|certification voucher)\b")
+        
+        for post in raw_posts:
+            title = (post.get("title", "") or "").lower()
+            content = (post.get("selftext", "") or "").lower()
+            text = f"{title} {content}"
+            
+            has_exam = bool(exam_regex.search(text)) and not exclude_exam.search(text)
+            has_cert = bool(cert_regex.search(text)) and not exclude_cert.search(text)
+            has_pass = bool(pass_regex.search(text))
+            
+            if (has_exam or has_cert) and has_pass:
+                logger.info(
+                    "Kodexis: filtered exam/cert + pass post",
+                    title=post.get("title", "")[:80],
+                    subreddit=post.get("subreddit", ""),
+                )
+                continue
+            
+            filtered.append(post)
+        
+        return filtered
 
     def _normalize_kodexis_posts(
-        self, subreddit_name: str, raw_posts: list[dict[str, Any]]
+        self, subreddit_name: str, raw_posts: list[dict[str, Any]], limit: int
     ) -> list[NormalizedPost]:
         results: list[NormalizedPost] = []
 
