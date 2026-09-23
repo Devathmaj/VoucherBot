@@ -29,11 +29,11 @@ from voucherbot.models.source import SourceType
 
 
 class TestRedditTier:
-    def test_tier_a_subreddits(self) -> None:
-        assert bootstrap._reddit_tier("AWSCertifications") == "A"
+    def test_tier_c_subreddits(self) -> None:
+        assert bootstrap._reddit_tier("AWSCertifications") == "C"
 
-    def test_other_subreddits_are_tier_b(self) -> None:
-        assert bootstrap._reddit_tier("CompTIA") == "B"
+    def test_other_subreddits_are_tier_d(self) -> None:
+        assert bootstrap._reddit_tier("CompTIA") == "D"
 
 
 class TestSourceName:
