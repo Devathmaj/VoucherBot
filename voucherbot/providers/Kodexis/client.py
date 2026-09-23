@@ -18,10 +18,10 @@ class KodexisRedditClient:
             timeout=30.0,
         )
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "KodexisRedditClient":
         return self
 
-    async def __aexit__(self, *args):
+    async def __aexit__(self, *args: Any) -> None:
         await self.http_client.aclose()
 
     async def fetch_latest_posts(

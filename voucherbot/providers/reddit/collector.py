@@ -74,8 +74,12 @@ class RedditCollector(BaseCollector):
         if not subreddit_name:
             return []
 
+        # self.kodexis_client is guaranteed non-None by the caller check
+        client = self.kodexis_client
+        assert client is not None
+
         try:
-            raw_posts = await self.kodexis_client.fetch_latest_posts(
+            raw_posts = await client.fetch_latest_posts(
                 subreddit=subreddit_name, limit=limit
             )
         except Exception as e:
@@ -240,96 +244,6 @@ class RedditCollector(BaseCollector):
                         "url": post.url,
                         "subreddit": subreddit_name,
                         "flair": post.link_flair_text,
-                    },
-                )
-            )
-
-        return results
-
-    def _normalize_praw_posts(
-        self, subreddit_name: str, raw_posts: Any
-    ) -> list[NormalizedPost]:
-        results: list[NormalizedPost] = []
-
-        for post in raw_posts:
-            results.append(
-                NormalizedPost(
-                    url=f"https://www.reddit.com{post.permalink}",
-                    title=post.title,
-                    content=post.selftext or None,
-                    summary=None,
-                    author=None,
-                    published_at=datetime.fromtimestamp(
-                        post.created_utc, tz=timezone.utc
-                    ),
-                    raw_data={
-                        "score": post.score,
-                        "num_comments": post.num_comments,
-                        "url": post.url,
-                        "subreddit": subreddit_name,
-                        "flair": post.link_flair_text,
-                    },
-                )
-            )
-
-        return results
-
-    async def _collect_via_rss(
-        self,
-        source_config: dict[str, Any],
-        limit: int,
-    ) -> list[NormalizedPost]:
-        subreddit_name = source_config["subreddit"]
-        query_terms = source_config.get("query_terms") or []
-        if query_terms:
-            query = quote_plus(" OR ".join(query_terms))
-            url = f"https://www.reddit.com/r/{subreddit_name}/search.rss?q={query}&restrict_sr=on&sort=new"
-        else:
-            url = f"https://www.reddit.com/r/{subreddit_name}/new.rss"
-
-        headers = {
-            "User-Agent": scraper_user_agent(),
-        }
-        logger.info("RedditCollector: fetching RSS fallback", subreddit=subreddit_name)
-
-        try:
-            response = await polite_get(
-                url,
-                accept="application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
-                timeout=15,
-                extra_headers=headers,
-            )
-        except RobotsDisallowedError:
-            logger.info(
-                "RedditCollector: RSS fallback blocked by robots.txt",
-                subreddit=subreddit_name,
-            )
-            return []
-        except Exception as exc:
-            logger.error(
-                "RedditCollector: RSS fallback failed",
-                subreddit=subreddit_name,
-                error=str(exc),
-            )
-            return []
-
-        feed = await asyncio.to_thread(feedparser.parse, response.content)
-        results: list[NormalizedPost] = []
-        for entry in feed.entries[:limit]:
-            link = entry.get("link", "")
-            title = entry.get("title", "(no title)")
-            results.append(
-                NormalizedPost(
-                    url=link,
-                    title=title,
-                    content=entry.get("summary") or None,
-                    summary=None,
-                    author=None,
-                    published_at=None,
-                    raw_data={
-                        "subreddit": subreddit_name,
-                        "feed_url": url,
-                        "auth_mode": "rss",
                     },
                 )
             )
