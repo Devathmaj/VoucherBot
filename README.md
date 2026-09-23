@@ -21,7 +21,7 @@ We heard your request loud and clear. 🎉
 
 Instead of going through the entire setup and hosting it yourself, you can now **add VoucherBot to your Discord or Telegram** and it will alert you the moment a certification voucher shows up. No code, no deploy, no hassle.
 
-Just head over to **[voucherbot-preview.pages.dev/#notifications](https://voucherbot-preview.pages.dev/#notifications)** to learn all about it and get it set up in minutes.
+Just head over to **[voucherbot.pages.dev/#notifications](https://voucherbot.pages.dev/#notifications)** to learn all about it and get it set up in minutes.
 
 The code for the Discord and Telegram bots lives in the separate [Notification-Bot](https://github.com/Devathmaj/Notification-Bot) repository, feel free to check it out.
 
@@ -45,7 +45,7 @@ The code for the Discord and Telegram bots lives in the separate [Notification-B
 
 VoucherBot is a program that automatically hunts for certification exam discounts across the internet — so you don't have to. Instead of manually checking dozens of websites, blogs, forums, and communities yourself, VoucherBot does it all in the background, filters out irrelevant results, and alerts you whenever it finds a legitimate certification promotion.
 
-**The easiest way to use VoucherBot** is to add it directly to your **Discord or Telegram** — get notified the instant a voucher drops, no setup at all. See the [Notifications](https://voucherbot-preview.pages.dev/#notifications) page to get started.
+**The easiest way to use VoucherBot** is to add it directly to your **Discord or Telegram** — get notified the instant a voucher drops, no setup at all. See the [Notifications](https://voucherbot.pages.dev/#notifications) page to get started.
 
 Prefer to run it yourself? The whole thing runs in the cloud (on a free service called Render), so once it's set up, it runs 24/7 without your computer needing to be on. That path is covered below.
 
@@ -194,8 +194,8 @@ This project is licensed under the **Apache License 2.0**. See [LICENSE](./LICEN
 
 Curious what VoucherBot actually finds? A selection of vouchers and certification offers collected by the bot is publicly displayed at:
 
-**[voucherbot-preview.pages.dev](https://voucherbot-preview.pages.dev/)**
+**[voucherbot.pages.dev](https://voucherbot.pages.dev/)**
 
 Feel free to browse through it and see the kind of deals VoucherBot surfaces — no setup required.
 
-![VoucherBot Preview](docs/images/voucherbot-preview.png)
+![VoucherBot Preview](docs/images/voucherbot.png)
