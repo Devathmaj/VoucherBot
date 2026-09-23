@@ -8,7 +8,7 @@ Collectors prefer RSS/APIs, identify as `VoucherBot`, obey `robots.txt` / Crawl-
 
 | File | Contents |
 |------|----------|
-| [`Subreddit.txt`](Subreddit.txt) | Reddit subreddits (Tier A/B), plus disabled subs |
+| [`Subreddit.txt`](Subreddit.txt) | Reddit subreddits (Tier C/D), plus disabled subs |
 | [`RSS_List.txt`](RSS_List.txt) | RSS, blog, and forum feeds |
 | [`Website_List.txt`](Website_List.txt) | HTML scrapers (vendor pages, aggregators) |
 | [`Event_List.txt`](Event_List.txt) | Vendor event listing pages |
