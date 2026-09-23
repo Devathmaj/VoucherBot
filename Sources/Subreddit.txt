@@ -1,14 +1,15 @@
 # Official Reddit sources (voucherbot/database/bootstrap.py)
 # Reddit OAuth API: REDDIT_INGESTION_ENABLED in .env (default false — RSS-only collection)
+# Kodexis API fallback: KODEXIS_API_KEY in .env (used when OAuth disabled)
 # Fetch limit: 25 posts per poll
 
-# Tier A — every 15 min
+# Tier C — every 240 min (moved from Tier A)
 AWSCertifications
 AzureCertification
 Udemy
 FreeUdemyCoupons
 
-# Tier B — every 60 min
+# Tier D — every 720 min (moved from Tier B)
 O365Certification
 CompTIA
 ccna
@@ -30,3 +31,4 @@ vmware
 # FREE
 # deals (disabled)
 # freebies (disabled)
+# mcsa (removed)

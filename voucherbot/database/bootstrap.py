@@ -136,12 +136,16 @@ HIGH_SIGNAL_REDDIT_SUBREDDITS = [
 # Removed from catalog — too noisy for cert-voucher signal.
 DISABLED_REDDIT_SUBREDDITS = {"deals", "freebies"}
 
-TIER_A_REDDIT_SUBS = {
+# Moved from Tier A to Tier C (15min -> 240min)
+TIER_C_REDDIT_SUBS = {
     "AWSCertifications",
     "AzureCertification",
     "Udemy",
     "FreeUdemyCoupons",
 }
+
+# Moved from Tier B to Tier D (60min -> 720min)
+# All other HIGH_SIGNAL_REDDIT_SUBREDDITS not in TIER_C_REDDIT_SUBS
 
 _TIER_CADENCE_MINUTES = {
     "A": 15,
@@ -152,7 +156,7 @@ _TIER_CADENCE_MINUTES = {
 
 
 def _reddit_tier(sub: str) -> str:
-    return "A" if sub in TIER_A_REDDIT_SUBS else "B"
+    return "C" if sub in TIER_C_REDDIT_SUBS else "D"
 
 
 def _source_name(source_type: SourceType, label: str) -> str:
