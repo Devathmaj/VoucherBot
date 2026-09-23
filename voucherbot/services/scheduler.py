@@ -35,7 +35,9 @@ from voucherbot.services.retention import purge_expired_post_content
 logger = structlog.get_logger(__name__)
 
 _reddit_client = RedditClient()
-_kodexis_client = KodexisRedditClient(settings.kodexis_api_key) if settings.kodexis_api_key else None
+_kodexis_client = (
+    KodexisRedditClient(settings.kodexis_api_key) if settings.kodexis_api_key else None
+)
 _collectors = {
     "reddit": RedditCollector(_reddit_client, _kodexis_client),
     "rss": RssCollector(),

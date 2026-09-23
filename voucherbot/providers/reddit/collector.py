@@ -24,7 +24,11 @@ logger = structlog.get_logger(__name__)
 class RedditCollector(BaseCollector):
     """Collects posts from a subreddit via asyncpraw or Kodexis fallback."""
 
-    def __init__(self, reddit_client: RedditClient, kodexis_client: KodexisRedditClient | None = None) -> None:
+    def __init__(
+        self,
+        reddit_client: RedditClient,
+        kodexis_client: KodexisRedditClient | None = None,
+    ) -> None:
         self.client = reddit_client
         self.kodexis_client = kodexis_client
 
@@ -50,7 +54,9 @@ class RedditCollector(BaseCollector):
                     limit=limit,
                 )
             else:
-                raw_posts = await self.client.fetch_new_posts(subreddit_name, limit=limit)
+                raw_posts = await self.client.fetch_new_posts(
+                    subreddit_name, limit=limit
+                )
 
             return self._normalize_praw_posts(subreddit_name, raw_posts)
 
@@ -74,7 +80,9 @@ class RedditCollector(BaseCollector):
             )
         except Exception as e:
             logger.error(
-                "Kodexis fallback failed for {subreddit}", subreddit=subreddit_name, error=str(e)
+                "Kodexis fallback failed for {subreddit}",
+                subreddit=subreddit_name,
+                error=str(e),
             )
             return []
 
@@ -85,7 +93,7 @@ class RedditCollector(BaseCollector):
         self, raw_posts: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
         """Filter out posts mentioning 'exam' or 'certification' + 'pass'/'passed'.
-        
+
         Only filters when 'exam' or 'certification' appear as standalone terms,
         not as part of 'free exam', 'exam voucher', 'certification voucher', etc.
         """
@@ -93,19 +101,21 @@ class RedditCollector(BaseCollector):
         pass_regex = re.compile(r"\b(pass|passed|passing)\b")
         exam_regex = re.compile(r"\bexam\b")
         cert_regex = re.compile(r"\bcertification\b")
-        
-        exclude_exam = re.compile(r"\b(free exam|exam voucher|exam credit|beta exam|retake)\b")
+
+        exclude_exam = re.compile(
+            r"\b(free exam|exam voucher|exam credit|beta exam|retake)\b"
+        )
         exclude_cert = re.compile(r"\b(free certification|certification voucher)\b")
-        
+
         for post in raw_posts:
             title = (post.get("title", "") or "").lower()
             content = (post.get("selftext", "") or "").lower()
             text = f"{title} {content}"
-            
+
             has_exam = bool(exam_regex.search(text)) and not exclude_exam.search(text)
             has_cert = bool(cert_regex.search(text)) and not exclude_cert.search(text)
             has_pass = bool(pass_regex.search(text))
-            
+
             if (has_exam or has_cert) and has_pass:
                 logger.info(
                     "Kodexis: filtered exam/cert + pass post",
@@ -113,9 +123,9 @@ class RedditCollector(BaseCollector):
                     subreddit=post.get("subreddit", ""),
                 )
                 continue
-            
+
             filtered.append(post)
-        
+
         return filtered
 
     def _normalize_kodexis_posts(
