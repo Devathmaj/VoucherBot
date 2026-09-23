@@ -138,6 +138,9 @@ class Settings(BaseSettings):
     reddit_fetch_limit: int = 25
     reddit_ingestion_enabled: bool = False
 
+    # Kodexis API (fallback when REDDIT_INGESTION_ENABLED=false)
+    kodexis_api_key: Optional[str] = None
+
     # Scraping policy (see deep-research-report)
     # Identifying UA; empty → built from email contact. Do not spoof browsers.
     scraper_user_agent: Optional[str] = None
