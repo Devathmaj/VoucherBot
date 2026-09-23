@@ -117,7 +117,6 @@ HIGH_SIGNAL_REDDIT_SUBREDDITS = [
     "AWSCertifications",
     "AzureCertification",
     "O365Certification",
-    "mcsa",
     "CompTIA",
     "ccna",
     "ccnp",
